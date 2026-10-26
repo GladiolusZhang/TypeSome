@@ -239,6 +239,7 @@ class SettingsActivity : Activity() {
         // ---- keyboard
         val kb = section("键盘")
         switch(kb, "按键振动", "vibrate", true)
+        switch(kb, "点击键盘以外的地方自动收起键盘", "hide_outside", true)
         switch(kb, "模糊音（z=zh、c=ch、s=sh、n=l、an=ang、en=eng、in=ing）", "fuzzy_pinyin", false)
         switch(kb, "拼音自动纠错（如 ign→ing）", "auto_correct", true)
         switch(kb, "联想下一个词", "associate", true)

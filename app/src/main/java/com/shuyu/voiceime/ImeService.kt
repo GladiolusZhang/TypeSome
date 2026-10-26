@@ -73,7 +73,6 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     private enum class Smart { NONE, CALC, PHONE, OTP, ASSOC }
     private var smart = Smart.NONE
     private var smartActions: List<() -> Unit> = emptyList()
-    private var usedOtp: String? = null
 
     private val clipHistory = ArrayList<String>()
     private var clipboard: ClipboardManager? = null
@@ -91,6 +90,37 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         loadClipHistory()
         clipboard = getSystemService(ClipboardManager::class.java)
         clipboard?.addPrimaryClipChangedListener(clipListener)
+        watchOutsideTouches()
+    }
+
+    // ================================================================ tap outside to hide
+
+    private val hideFromOutside = Runnable { if (isInputViewShown && !voice.isRecording) requestHideSelf(0) }
+
+    /**
+     * Touches outside the keyboard arrive as ACTION_OUTSIDE (no coordinates). Hide shortly after, unless the
+     * tap turns out to be in a text field: that moves the cursor or starts new input, which cancels the hide.
+     */
+    private fun watchOutsideTouches() {
+        val w = window.window ?: return
+        w.addFlags(android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
+        val cb = w.callback
+        w.callback = object : android.view.Window.Callback by cb {
+            override fun dispatchTouchEvent(e: android.view.MotionEvent): Boolean {
+                if (e.actionMasked == android.view.MotionEvent.ACTION_OUTSIDE) {
+                    if (prefs.hideOnOutsideTap) { main.removeCallbacks(hideFromOutside); main.postDelayed(hideFromOutside, 280) }
+                    return true
+                }
+                return cb.dispatchTouchEvent(e)
+            }
+        }
+    }
+
+    private fun keepShown() = main.removeCallbacks(hideFromOutside)
+
+    override fun onShowInputRequested(flags: Int, configChange: Boolean): Boolean {
+        keepShown()
+        return super.onShowInputRequested(flags, configChange)
     }
 
     override fun onDestroy() {
@@ -191,6 +221,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        keepShown()
         editorInfo = info
         prefs = Prefs(this)
         // skin changed in settings, or the system switched light/dark: rebuild the views
@@ -466,10 +497,13 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         val kind = smart
         clearSmart()
         action()
-        if (kind == Smart.OTP) usedOtp = null
     }
 
-    override fun onCloseSuggestions() = clearSmart()
+    override fun onCloseSuggestions() {
+        // a dismissed code shouldn't come back through another channel either
+        if (smart == Smart.OTP) shownOtp?.let { markOtpUsed(it) }
+        clearSmart()
+    }
 
     /** Shows "2" and "1+1=2" when the text before the cursor is an arithmetic expression. */
     private fun refreshCalc() {
@@ -488,6 +522,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     }
 
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
+        keepShown()
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         if (smart == Smart.CALC) refreshCalc()
     }
@@ -500,16 +535,33 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             val fromSms = Otp.latestFromNotification() ?: Otp.latestFromSms(this)
             val fromClip = clipHistory.firstOrNull()?.let { Otp.extract(it) }
             val code = fromSms ?: fromClip ?: return@execute
-            main.post {
-                if (code == usedOtp || engine.isComposing) return@post
-                showSmart(Smart.OTP, listOf(TopBar.Suggestion(code, "验证码", highlight = true) to { commit(code); usedOtp = code }))
-            }
+            main.post { showOtp(code) }
         }
     }
 
+    /**
+     * One code, one offer: the same code often arrives through several channels (notification, SMS,
+     * the system copying it to the clipboard — vivo does all three), so codes already filled in are remembered.
+     */
     private fun showOtp(code: String) {
-        if (code == usedOtp || engine.isComposing) return
-        showSmart(Smart.OTP, listOf(TopBar.Suggestion(code, "验证码", highlight = true) to { commit(code); usedOtp = code }))
+        if (engine.isComposing || otpUsed(code)) return
+        if (smart == Smart.OTP && smartActions.isNotEmpty() && shownOtp == code) return
+        shownOtp = code
+        showSmart(Smart.OTP, listOf(TopBar.Suggestion(code, "验证码", highlight = true) to { commit(code); markOtpUsed(code) }))
+    }
+
+    private var shownOtp: String? = null
+
+    private fun otpUsed(code: String): Boolean {
+        val s = prefs.sp.getString("used_otp", "") ?: ""
+        return s.split(',').any { it.substringBefore('@') == code && System.currentTimeMillis() - (it.substringAfter('@').toLongOrNull() ?: 0) < 30 * 60_000 }
+    }
+
+    private fun markOtpUsed(code: String) {
+        val now = System.currentTimeMillis()
+        val keep = (prefs.sp.getString("used_otp", "") ?: "").split(',')
+            .filter { it.contains('@') && now - (it.substringAfter('@').toLongOrNull() ?: 0) < 30 * 60_000 }
+        prefs.sp.edit().putString("used_otp", (keep + "$code@$now").takeLast(10).joinToString(",")).apply()
     }
 
     private fun watchSms() {
@@ -685,9 +737,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         clipHistory.add(0, text)
         while (clipHistory.size > 30) clipHistory.removeAt(clipHistory.size - 1)
         prefs.sp.edit().putString("clip_history", JSONArray(clipHistory).toString()).apply()
-        if (isInputViewShown && prefs.otpEnabled) Otp.extract(text)?.let { code ->
-            showSmart(Smart.OTP, listOf(TopBar.Suggestion(code, "验证码", highlight = true) to { commit(code); usedOtp = code }))
-        }
+        if (isInputViewShown && prefs.otpEnabled) Otp.extract(text)?.let { showOtp(it) }
     }
 
     private fun loadClipHistory() {
