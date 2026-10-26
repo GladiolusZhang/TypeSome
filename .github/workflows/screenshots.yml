@@ -32,6 +32,7 @@ jobs:
       - run: pip install pillow
 
       - uses: reactivecircus/android-emulator-runner@v2
+        continue-on-error: true
         with:
           api-level: 34
           target: google_apis
@@ -39,14 +40,18 @@ jobs:
           profile: pixel_6
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim
           script: |
-            adb install -r -g $(ls apk/*.apk | head -1)
+            adb wait-for-device; sleep 15
+            adb install -r -g $(ls apk/*.apk | head -1) || (sleep 10; adb install -r -g $(ls apk/*.apk | head -1))
             adb shell ime enable com.shuyu.voiceime/.ImeService
             adb shell ime set com.shuyu.voiceime/.ImeService
             adb shell settings put secure show_ime_with_hard_keyboard 1
-            python3 tools/screens.py shots
+            python3 tools/screens.py shots > screens-log.txt 2>&1 || echo "screens.py failed" >> screens-log.txt
 
       - name: Publish screenshots to the "screenshots" branch
+        if: always()
         run: |
+          mkdir -p shots
+          cp screens-log.txt shots/ 2>/dev/null || echo "no log (emulator step failed early)" > shots/screens-log.txt
           cd shots
           git init -q -b screenshots
           git config user.name "github-actions"
