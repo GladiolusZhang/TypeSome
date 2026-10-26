@@ -6,3 +6,5 @@ local.properties
 app/src/main/assets/pinyin_dict.txt
 app/src/main/assets/zh_bigram.txt
 app/src/main/assets/en_words.txt
+app/src/main/assets/zh_spoken.txt
+app/src/main/assets/en_bigram.txt

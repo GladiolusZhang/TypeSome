@@ -3,6 +3,7 @@ package com.shuyu.voiceime
 import android.content.Context
 import com.shuyu.voiceime.data.Contacts
 import com.shuyu.voiceime.pinyin.Dictionary
+import com.shuyu.voiceime.pinyin.EnglishWords
 import java.util.concurrent.Executors
 
 /** Process-wide singletons shared by the keyboard service and the settings screen. */
@@ -21,6 +22,19 @@ object Core {
                 if (Prefs(ctx).contactsEnabled) reloadContacts(ctx)
             }
             return d
+        }
+    }
+
+    @Volatile private var en: EnglishWords? = null
+
+    fun english(ctx: Context): EnglishWords {
+        en?.let { return it }
+        synchronized(this) {
+            en?.let { return it }
+            val e = EnglishWords(ctx.applicationContext)
+            en = e
+            bg.execute { e.load() }
+            return e
         }
     }
 

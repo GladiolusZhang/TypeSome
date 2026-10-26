@@ -24,6 +24,7 @@ import com.shuyu.voiceime.input.Handwriting
 import com.shuyu.voiceime.ui.HandwritingView
 import com.shuyu.voiceime.ui.VoiceOverlay
 import com.shuyu.voiceime.pinyin.Dictionary
+import com.shuyu.voiceime.pinyin.EnglishWords
 import com.shuyu.voiceime.pinyin.PinyinEngine
 import com.shuyu.voiceime.ui.CandidateGridPanel
 import com.shuyu.voiceime.ui.ClipboardPanel
@@ -46,6 +47,9 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
 
     private lateinit var prefs: Prefs
     private lateinit var dict: Dictionary
+    private lateinit var en: EnglishWords
+    /** English suggestions are off in password, e-mail and URL fields. */
+    private var enSuggest = true
     private lateinit var engine: PinyinEngine
     private lateinit var voice: VoiceController
     private val main = Handler(Looper.getMainLooper())
@@ -70,7 +74,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     private var editorInfo: EditorInfo? = null
 
     // smart suggestions currently shown in the candidate strip
-    private enum class Smart { NONE, CALC, PHONE, OTP, ASSOC }
+    private enum class Smart { NONE, CALC, PHONE, OTP, ASSOC, WORDS }
     private var smart = Smart.NONE
     private var smartActions: List<() -> Unit> = emptyList()
 
@@ -83,6 +87,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         super.onCreate()
         prefs = Prefs(this)
         dict = Core.dictionary(this)
+        en = Core.english(this)
         engine = PinyinEngine(dict)
         voice = VoiceController(this, this)
         chinese = prefs.chineseMode
@@ -251,6 +256,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS || variation == InputType.TYPE_TEXT_VARIATION_URI ||
             variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS)
         chinese = if (englishOnly) false else prefs.chineseMode
+        enSuggest = !englishOnly && info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS == 0
         keyboard.rowHeightPx = dp(60f) * prefs.keyboardHeightPercent / 100f
         keyboard.enterLabel = enterLabel(info)
         applyLayout()
@@ -267,6 +273,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         if (voice.isRecording) voice.cancel()
         engine.reset()
         dict.flush()
+        en.flush()
     }
 
     override fun onEvaluateFullscreenMode() = false
@@ -327,7 +334,12 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             }
             KeyType.BACKSPACE -> backspace()
             KeyType.SPACE -> {
-                if (engine.isComposing || handCands.isNotEmpty()) onCandidate(0) else commit(" ")
+                if (engine.isComposing || handCands.isNotEmpty()) onCandidate(0)
+                else {
+                    val word = englishWordBefore()
+                    commit(" ")
+                    if (word != null) afterEnglishWord(word)
+                }
             }
             KeyType.ENTER -> enter()
             KeyType.SHIFT -> {
@@ -368,11 +380,56 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             finishComposing(raw = false)
             commit(if (shift > 0) s.uppercase() else s)
             if (shift == 1) { shift = 0; keyboard.shiftState = 0 }
+            refreshEnglish()
             return
         }
         if (s == "'" && engine.isComposing) { engine.input('\''); showComposing(); return }
         if (engine.isComposing) finishComposing(raw = false)
         commit(if (chinese && !numbers) toChinesePunct(s) else s)
+        if (!chinese) { if (s == "'") refreshEnglish() else if (smart == Smart.WORDS || smart == Smart.ASSOC) clearSmart() }
+    }
+
+    // ================================================================ English suggestions
+
+    private val wordEnd = Regex("[A-Za-z][A-Za-z']*$")
+
+    /** The English word the cursor is right after, if suggestions apply here. */
+    private fun englishWordBefore(): String? {
+        if (chinese || numbers || !enSuggest) return null
+        val before = currentInputConnection?.getTextBeforeCursor(40, 0) ?: return null
+        return wordEnd.find(before)?.value
+    }
+
+    /** Completions of the word being typed (the letters go straight into the editor). */
+    private fun refreshEnglish() {
+        if (engine.isComposing || !en.loaded) return
+        val typed = englishWordBefore()
+        val list = if (typed == null || !prefs.associate) emptyList() else en.suggest(typed)
+        if (list.isEmpty()) { if (smart == Smart.WORDS || smart == Smart.ASSOC) clearSmart(); return }
+        showSmart(Smart.WORDS, list.map { w ->
+            val shown = EnglishWords.matchCase(w, typed!!)
+            TopBar.Suggestion(shown) to {
+                val ic = currentInputConnection
+                if (ic != null) {
+                    ic.beginBatchEdit()
+                    ic.deleteSurroundingText(typed.length, 0)
+                    ic.commitText("$shown ", 1)
+                    ic.endBatchEdit()
+                }
+                afterEnglishWord(shown)
+            }
+        })
+    }
+
+    /** A word was finished: count it and offer the words that usually follow. */
+    private fun afterEnglishWord(word: String) {
+        if (engine.learning) en.learn(word)
+        val next = if (prefs.associate && en.loaded) en.nextWords(word) else emptyList()
+        if (next.isEmpty()) { if (smart == Smart.WORDS || smart == Smart.ASSOC) clearSmart(); return }
+        showSmart(Smart.ASSOC, next.map { w ->
+            val shown = EnglishWords.matchCase(w, "")
+            TopBar.Suggestion(shown) to { commit("$shown "); afterEnglishWord(shown) }
+        })
     }
 
     private fun toChinesePunct(s: String) = when (s) {
@@ -397,7 +454,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             val n = if (before != null && before.length == 2 && Character.isSurrogatePair(before[0], before[1])) 2 else 1
             if (before.isNullOrEmpty()) sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL) else ic.deleteSurroundingText(n, 0)
         }
-        main.post { refreshCalc() }
+        main.post { refreshCalc(); if (!chinese && smart == Smart.NONE) refreshEnglish() }
     }
 
     private fun enter() {

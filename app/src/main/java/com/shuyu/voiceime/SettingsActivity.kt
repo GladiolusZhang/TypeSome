@@ -311,7 +311,7 @@ class SettingsActivity : Activity() {
         button(r5, "查看 / 删除") { manageWords() }
         button(r5, "清空词库") {
             AlertDialog.Builder(this).setTitle("清空用户词库？").setMessage("学到的词和手动添加的词都会删除，无法恢复。建议先导出备份。")
-                .setPositiveButton("清空") { _, _ -> Core.dictionary(this).clearUser(); refreshDictInfo() }
+                .setPositiveButton("清空") { _, _ -> Core.dictionary(this).clearUser(); Core.english(this).clearUser(); refreshDictInfo() }
                 .setNegativeButton("取消", null).show()
         }
 

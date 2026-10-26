@@ -26,6 +26,14 @@ jobs:
       - name: Generate pinyin dictionary (rime-ice)
         run: python tools/gen_dict.py
 
+      - name: Word-pair data (built by "Build word-pair data", kept on the data branch)
+        run: |
+          git fetch --depth 1 origin data || { echo "::warning::no data branch: 联想 falls back to completions"; exit 0; }
+          for f in zh_bigram.txt zh_spoken.txt en_bigram.txt; do
+            git show FETCH_HEAD:$f > app/src/main/assets/$f || { rm -f app/src/main/assets/$f; echo "::warning::$f missing"; }
+          done
+          ls -la app/src/main/assets
+
       - uses: gradle/actions/setup-gradle@v5
 
       - name: Build

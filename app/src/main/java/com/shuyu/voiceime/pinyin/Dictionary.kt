@@ -13,10 +13,11 @@ import java.io.InputStreamReader
 class Dictionary(
     private val openAsset: () -> java.io.InputStream,
     private val dataDir: File,
-    private val openBigrams: () -> java.io.InputStream? = { null },
+    /** Optional generated data by file name: zh_bigram.txt, zh_spoken.txt (see tools/gen_ngram.py). */
+    private val openData: (String) -> java.io.InputStream? = { null },
 ) {
     constructor(context: Context) : this({ context.assets.open("pinyin_dict.txt") }, context.filesDir,
-        { try { context.assets.open("zh_bigram.txt") } catch (_: java.io.IOException) { null } })
+        { name -> try { context.assets.open(name) } catch (_: java.io.IOException) { null } })
 
     /** Words seen after [prev] in the corpora (assets/zh_bigram.txt, from tools/gen_ngram.py). */
     class Next(val total: Int, val words: Array<String>, val counts: IntArray) {
@@ -54,6 +55,16 @@ class Dictionary(
     private val userNextFile get() = File(dataDir, "user_next.tsv")
 
     fun load() {
+        // dictionary weights come mostly from written text; these factors shift them toward speech
+        val spoken = HashMap<String, Float>()
+        openData("zh_spoken.txt")?.let { input ->
+            BufferedReader(InputStreamReader(input, Charsets.UTF_8)).useLines { lines ->
+                for (line in lines) {
+                    val t = line.indexOf('\t')
+                    if (t > 0) spoken[line.substring(0, t)] = line.substring(t + 1).toFloatOrNull() ?: continue
+                }
+            }
+        }
         val reader = BufferedReader(InputStreamReader(openAsset(), Charsets.UTF_8), 1 shl 16)
         reader.useLines { lines ->
             for (line in lines) {
@@ -67,6 +78,7 @@ class Dictionary(
                     val c = p.lastIndexOf(',')
                     words[i] = p.substring(0, c)
                     freqs[i] = p.substring(c + 1).toIntOrNull() ?: 1
+                    spoken[words[i]]?.let { f -> freqs[i] = (freqs[i] * f).toInt() }
                 }
                 val e = Entry(key, key.split('\'').toTypedArray(), words, freqs)
                 entries.add(e)
@@ -95,7 +107,7 @@ class Dictionary(
     }
 
     private fun loadBigrams() {
-        val input = openBigrams() ?: return
+        val input = openData("zh_bigram.txt") ?: return
         // share the word strings with the dictionary instead of keeping half a million copies
         val canon = HashMap<String, String>(wordFreq.size * 2)
         for (w in wordFreq.keys) canon[w] = w

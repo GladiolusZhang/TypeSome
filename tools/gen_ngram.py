@@ -63,12 +63,16 @@ class Segmenter:
         out.reverse()
         return out
 
+# word counts in the conversational sources (film dialogue, chat), for re-weighting the dictionary
+SPOKEN = collections.Counter()
+
 def count_text(lines, seg, words, limit):
     big = collections.Counter()
     n = 0
     for line in lines:
         for run in HAN.findall(line):
             toks = seg(run)
+            SPOKEN.update(toks)
             for a, b in zip(toks, toks[1:]):
                 if a in words and b in words: big[(a, b)] += 1
         n += 1
@@ -235,6 +239,33 @@ def main(dict_path, out, cache):
             n += len(keep)
             f.write(f"{a}\t{round(total)}\t" + " ".join(f"{b},{round(c)}" for b, c in keep) + "\n")
     log(f"wrote {n} pairs for {len(by_first)} words to {out}")
+    spoken_weights(dict_path, set(seg.logp), os.path.join(os.path.dirname(out) or ".", "zh_spoken.txt"))
+
+BETA = float(os.environ.get("SPOKEN_BETA", "0.35"))
+
+def spoken_weights(dict_path, lexicon, out):
+    """Per-word frequency factors that pull the dictionary (mostly written text) toward how people
+    actually talk and chat: 你好 over 你会, 知道 over 制度. factor = (spoken / written) ** BETA,
+    each side scaled to the same total, for words of the segmenting lexicon only (elsewhere
+    absence from the dialogue says nothing)."""
+    if not SPOKEN: return
+    written = {}
+    with open(dict_path, encoding="utf-8") as f:
+        for line in f:
+            for p in line.rstrip("\n").split("\t")[1].split(" "):
+                w, c = p.rsplit(",", 1)
+                written[w] = max(written.get(w, 0), int(c or 0))
+    rows = []
+    for single in (True, False):
+        both = [w for w in lexicon if w in written and written[w] > 0 and (len(w) == 1) == single]
+        scale = sum(written[w] for w in both) / max(1, sum(SPOKEN[w] for w in both))
+        for w in both:
+            f = ((SPOKEN[w] + 0.5) * scale / written[w]) ** BETA
+            f = min(5.0, max(0.2, f))
+            if abs(math.log(f)) > 0.1: rows.append((w, f))
+    with open(out, "w", encoding="utf-8") as o:
+        for w, f in sorted(rows): o.write(f"{w}\t{f:.2f}\n")
+    log(f"wrote {len(rows)} spoken-language factors to {out}")
 
 if __name__ == "__main__":
     cache = sys.argv[5] if len(sys.argv) > 5 else "build/ngram-cache"
