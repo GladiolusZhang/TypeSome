@@ -12,15 +12,18 @@ import android.view.View
 
 /** Gray flat skin, matching the reference screenshots. */
 object Theme {
-    val BG = Color.parseColor("#AFAFAF")
-    val BAR = Color.parseColor("#B4B4B4")
-    val TEXT = Color.parseColor("#3A3E46")
-    val HINT = Color.parseColor("#5C6068")
-    val SEP = Color.parseColor("#C3C3C3")
-    val PRESSED = Color.parseColor("#9B9B9B")
+    // Sampled from the reference screenshots (flat gray skin).
+    val BG = Color.parseColor("#B0B0B0")
+    val BAR = Color.parseColor("#B0B0B0")
+    val BAR_LINE = Color.parseColor("#999999")
+    val TEXT = Color.parseColor("#484F59")
+    val HINT = Color.parseColor("#646B75")
+    val SEP = Color.parseColor("#9D9D9D")
+    val PRESSED = Color.parseColor("#9C9C9C")
     val ACCENT = Color.parseColor("#2F7BEA")
-    val CARD = Color.parseColor("#C6C6C6")
-    val OUTLINE = Color.parseColor("#8C8C8C")
+    val CARD = Color.parseColor("#C2C2C2")
+    val OUTLINE = Color.parseColor("#8A8A8A")
+    val BUBBLE = Color.parseColor("#F4F4F6")
 }
 
 fun Context.dp(v: Float): Float = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
@@ -111,11 +114,12 @@ object Icons {
                 c.drawPath(path, p)
             }
             Icon.LOGO -> {
-                p.style = Paint.Style.FILL
-                c.drawCircle(5.5f, 6f, 3.5f, p); c.drawCircle(18.5f, 6f, 3.5f, p)
-                r.set(1.5f, 4.5f, 22.5f, 21.5f); c.drawOval(r, p)
-                p.color = Theme.BAR; p.textSize = 10f; p.textAlign = Paint.Align.CENTER; p.isFakeBoldText = true
-                c.drawText("声", 12f, 17f, p); p.isFakeBoldText = false
+                // TypeSome mark: "T" with two sound waves
+                p.strokeWidth = 3.2f
+                c.drawLine(3.5f, 6f, 13.5f, 6f, p); c.drawLine(8.5f, 6f, 8.5f, 19f, p)
+                p.strokeWidth = 2f
+                r.set(10.5f, 8.5f, 16.5f, 15.5f); c.drawArc(r, -60f, 120f, false, p)
+                r.set(11.5f, 5f, 21.5f, 19f); c.drawArc(r, -60f, 120f, false, p)
             }
             Icon.GLOBE -> {
                 c.drawCircle(12f, 12f, 9.5f, p)

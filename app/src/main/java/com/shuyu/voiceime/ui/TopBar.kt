@@ -50,9 +50,16 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
     private val statusRow = LinearLayout(ctx)
 
     private var showingSuggestions = false
+    private val line = Paint().apply { color = Theme.BAR_LINE }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        canvas.drawRect(0f, height - dp(0.8f), width.toFloat(), height.toFloat(), line)
+    }
 
     init {
         setBackgroundColor(Theme.BAR)
+        setWillNotDraw(false)
         // ---- toolbar
         toolbar.orientation = LinearLayout.HORIZONTAL
         toolbar.gravity = Gravity.CENTER_VERTICAL
@@ -60,15 +67,15 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
             setOnClickListener { l.onToolbar(action) }
         }
         fun divider() = View(ctx).apply { setBackgroundColor(Theme.OUTLINE) }
-        toolbar.addView(tb(Icon.LOGO, "settings", 30f), LinearLayout.LayoutParams(0, -1, 1f))
-        toolbar.addView(divider(), LinearLayout.LayoutParams(dpi(1f), dpi(22f)))
-        toolbar.addView(tb(Icon.KEYBOARD, "modes"), LinearLayout.LayoutParams(0, -1, 1.4f))
-        toolbar.addView(tb(Icon.CURSOR, "edit"), LinearLayout.LayoutParams(0, -1, 1.4f))
-        toolbar.addView(tb(Icon.MIC, "voice", 26f), LinearLayout.LayoutParams(0, -1, 1.4f))
-        toolbar.addView(tb(Icon.SMILE, "emoji"), LinearLayout.LayoutParams(0, -1, 1.4f))
-        toolbar.addView(tb(Icon.CLOCK, "clipboard", 26f), LinearLayout.LayoutParams(0, -1, 1.2f))
-        toolbar.addView(divider(), LinearLayout.LayoutParams(dpi(1f), dpi(22f)))
-        toolbar.addView(tb(Icon.HIDE, "hide", 28f), LinearLayout.LayoutParams(0, -1, 1f))
+        // Slots measured from the reference: 58dp logo | four evenly spaced tools | 58dp hide
+        toolbar.addView(tb(Icon.LOGO, "settings", 27f), LinearLayout.LayoutParams(dpi(57f), -1))
+        toolbar.addView(divider(), LinearLayout.LayoutParams(dpi(1f), dpi(21f)))
+        toolbar.addView(tb(Icon.KEYBOARD, "modes", 26f), LinearLayout.LayoutParams(0, -1, 1f))
+        toolbar.addView(tb(Icon.CURSOR, "edit", 26f), LinearLayout.LayoutParams(0, -1, 1f))
+        toolbar.addView(tb(Icon.MIC, "voice", 26f), LinearLayout.LayoutParams(0, -1, 1f))
+        toolbar.addView(tb(Icon.SMILE, "emoji", 27f), LinearLayout.LayoutParams(0, -1, 1f))
+        toolbar.addView(divider(), LinearLayout.LayoutParams(dpi(1f), dpi(21f)))
+        toolbar.addView(tb(Icon.HIDE, "hide", 26f), LinearLayout.LayoutParams(dpi(57f), -1))
         addView(toolbar, LayoutParams(-1, -1))
 
         // ---- candidates

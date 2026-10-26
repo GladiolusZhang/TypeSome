@@ -10,7 +10,7 @@
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="声键输入法"
+        android:label="TypeSome"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
@@ -27,7 +27,7 @@
         <service
             android:name=".ImeService"
             android:exported="true"
-            android:label="声键输入法"
+            android:label="TypeSome"
             android:permission="android.permission.BIND_INPUT_METHOD">
             <intent-filter>
                 <action android:name="android.view.InputMethod" />
@@ -40,7 +40,7 @@
         <service
             android:name=".data.CodeListener"
             android:exported="true"
-            android:label="声键输入法 验证码填充"
+            android:label="TypeSome 验证码填充"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />

@@ -50,6 +50,7 @@ class SettingsActivity : Activity() {
     private lateinit var dictInfo: TextView
     private lateinit var onlineBox: LinearLayout
     private lateinit var offlineBox: LinearLayout
+    private var tryField: EditText? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,6 +69,13 @@ class SettingsActivity : Activity() {
         super.onResume()
         refreshSetup()
         refreshDictInfo()
+        // Used by the CI screenshot job: focus the test field so the keyboard shows.
+        if (intent.getBooleanExtra("demo", false)) tryField?.let { f ->
+            f.post {
+                f.requestFocus()
+                getSystemService(InputMethodManager::class.java).showSoftInput(f, 0)
+            }
+        }
     }
 
     private fun px(v: Float) = dp(v).toInt()
@@ -147,7 +155,7 @@ class SettingsActivity : Activity() {
     // ------------------------------------------------------------ screen
 
     private fun build() {
-        title("声键输入法 设置")
+        title("TypeSome 设置")
 
         // ---- setup
         val setup = section("开始使用")
@@ -166,7 +174,7 @@ class SettingsActivity : Activity() {
             "打开「允许读取通知」后一般就能正常填充；如果仍然不行，请到系统「短信」App 的设置（或 手机管家/隐私 设置）里关闭「验证码保护 / 短信验证码安全保护」。")
         note(setup, "使用方法：长按空格开始说话，手指不松开往上滑到「智能整理」或「翻译」再松手，就会用对应模式输出；滑到左下角「取消」松手则放弃。" +
             "也可以点键盘顶部的话筒图标，说完后点模式卡片结束。手写首次使用需要联网下载约 20MB 的模型（需能访问 Google）。")
-        field(setup, "在这里试一试", "", "点这里弹出键盘") {}
+        tryField = field(setup, "在这里试一试", "", "点这里弹出键盘") {}
 
         // ---- ASR
         val asr = section("语音识别")
@@ -257,7 +265,7 @@ class SettingsActivity : Activity() {
         val r4 = row(dict)
         button(r4, "导出") {
             startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("text/plain").putExtra(Intent.EXTRA_TITLE, "声键输入法词库.txt"), REQ_EXPORT)
+                .setType("text/plain").putExtra(Intent.EXTRA_TITLE, "TypeSome词库.txt"), REQ_EXPORT)
         }
         button(r4, "导入") {
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("text/*"), REQ_IMPORT)
@@ -397,7 +405,7 @@ class SettingsActivity : Activity() {
 
     private fun addWordDialog() {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(px(20f), px(8f), px(20f), 0) }
-        val word = EditText(this).apply { hint = "词语，例如：声键输入法" }
+        val word = EditText(this).apply { hint = "词语，例如：TypeSome" }
         val py = EditText(this).apply { hint = "拼音（可留空自动生成），例如：sheng jian shu ru fa" }
         box.addView(word); box.addView(py)
         AlertDialog.Builder(this).setTitle("添加词条").setView(box)

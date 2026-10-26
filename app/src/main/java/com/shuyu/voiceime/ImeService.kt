@@ -104,13 +104,13 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     // ================================================================ views
 
     override fun onCreateInputView(): View {
-        barHeight = dp(48f).toInt()
+        barHeight = dp(44f).toInt()
         root = FrameLayout(this)
         root.setBackgroundColor(Theme.BG)
         page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         topBar = TopBar(this, this)
         keyboard = KeyboardView(this, this)
-        keyboard.rowHeightPx = dp(54f) * prefs.keyboardHeightPercent / 100f
+        keyboard.rowHeightPx = dp(60f) * prefs.keyboardHeightPercent / 100f
         handPad = HandwritingView(this) { strokes -> recognizeInk(strokes) }
         overlay = VoiceOverlay(this, { onFeedback() }) { mode -> finishVoice(mode) }
         overlay.visibility = View.GONE
@@ -122,6 +122,8 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         keyArea.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         page.addView(topBar, LinearLayout.LayoutParams(-1, barHeight))
         page.addView(keyArea, LinearLayout.LayoutParams(-1, -2))
+        // let the key-press bubble of the top row draw over the toolbar
+        for (g in listOf(keyCol, keyArea, page, root)) { g.clipChildren = false; g.clipToPadding = false }
         root.addView(page, FrameLayout.LayoutParams(-1, -2))
         panelHost = FrameLayout(this)
         panelHost.visibility = View.GONE
@@ -191,7 +193,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS || variation == InputType.TYPE_TEXT_VARIATION_URI ||
             variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS)
         chinese = if (englishOnly) false else prefs.chineseMode
-        keyboard.rowHeightPx = dp(54f) * prefs.keyboardHeightPercent / 100f
+        keyboard.rowHeightPx = dp(60f) * prefs.keyboardHeightPercent / 100f
         keyboard.enterLabel = enterLabel(info)
         applyLayout()
         if (!topBar.isStatusShowing) topBar.showToolbar()
@@ -484,7 +486,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
 
     private fun voiceAllowed(): Boolean {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "请先在「声键输入法」设置里授予麦克风权限", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "请先在「TypeSome」设置里授予麦克风权限", Toast.LENGTH_LONG).show()
             openSettings()
             return false
         }
@@ -578,6 +580,9 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         panelHost.addView(v, FrameLayout.LayoutParams(-1, page.height.takeIf { it > 0 } ?: -1))
         panelHost.visibility = View.VISIBLE
         page.visibility = View.INVISIBLE
+        v.alpha = 0f
+        v.translationY = dp(14f)
+        v.animate().alpha(1f).translationY(0f).setDuration(170).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
     }
 
     override fun closePanel() {

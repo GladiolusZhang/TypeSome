@@ -44,11 +44,11 @@ jobs:
       - name: Rename APK
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk out/VoiceIME-${{ github.run_number }}.apk
+          cp app/build/outputs/apk/release/app-release.apk out/TypeSome-${{ github.run_number }}.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VoiceIME-apk
+          name: TypeSome-apk
           path: out/*.apk
 
       - name: Publish as a release (main branch only)
@@ -56,6 +56,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: 声键输入法 build ${{ github.run_number }}
+          name: TypeSome build ${{ github.run_number }}
           files: out/*.apk
           prerelease: true
