@@ -107,8 +107,11 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         Theme.apply(this, prefs.skin)
         barHeight = dp(44f).toInt()
         root = FrameLayout(this)
-        root.setBackgroundColor(Theme.BG)
-        page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // The strip above the keyboard is transparent (the app shows through) and only holds the composing tab.
+        tabHeight = dp(30f).toInt()
+        root.setPadding(0, tabHeight, 0, 0)
+        root.clipToPadding = false
+        page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Theme.BG) }
         topBar = TopBar(this, this)
         keyboard = KeyboardView(this, this)
         keyboard.rowHeightPx = dp(60f) * prefs.keyboardHeightPercent / 100f
@@ -129,6 +132,8 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         panelHost = FrameLayout(this)
         panelHost.visibility = View.GONE
         root.addView(panelHost, FrameLayout.LayoutParams(-1, -1))
+        // composing tab: sits on the bar's top-left corner, overlapping its top edge by 1dp
+        root.addView(topBar.composingTab, FrameLayout.LayoutParams(-2, tabHeight + dp(1f).toInt()).apply { topMargin = -tabHeight })
         window.window?.let { w ->
             w.navigationBarColor = Theme.BG
             // dark navigation buttons on light skins
@@ -225,6 +230,27 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     }
 
     override fun onEvaluateFullscreenMode() = false
+
+    private var tabHeight = 0
+    private val tabRect = android.graphics.Rect()
+
+    /** Only the keyboard (and the composing tab when shown) takes touches; the strip above it is see-through. */
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        if (!::root.isInitialized || !root.isShown) return
+        val loc = IntArray(2)
+        root.getLocationInWindow(loc)
+        val top = loc[1] + tabHeight
+        outInsets.contentTopInsets = top
+        outInsets.visibleTopInsets = top
+        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+        outInsets.touchableRegion.set(0, top, root.width, loc[1] + root.height)
+        val tab = topBar.composingTab
+        if (tab.visibility == View.VISIBLE) {
+            tabRect.set(0, loc[1], tab.width, top)
+            outInsets.touchableRegion.op(tabRect, android.graphics.Region.Op.UNION)
+        }
+    }
 
     private fun enterLabel(info: EditorInfo): String? {
         if (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0) return null

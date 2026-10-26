@@ -41,8 +41,11 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
 
     private val toolbar = LinearLayout(ctx)
     private val candBox = LinearLayout(ctx)
-    private val composing = TextView(ctx)
-    private val composingRow = LinearLayout(ctx)
+    /**
+     * Pinyin being typed, shown in a tab that sticks out above the bar's top-left corner.
+     * The service places it (it lives outside the bar, over the app); tapping it moves the cursor.
+     */
+    val composingTab = TextView(ctx)
     private val scroll = HorizontalScrollView(ctx)
     private val list = LinearLayout(ctx)
     private val expand = IconView(ctx, Icon.CHEVRON_DOWN, Theme.TEXT, 22f)
@@ -54,7 +57,14 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
 
     override fun dispatchDraw(canvas: Canvas) {
         super.dispatchDraw(canvas)
-        if (Theme.flat) canvas.drawRect(0f, height - dp(0.8f), width.toFloat(), height.toFloat(), line)
+        if (Theme.flat) {
+            canvas.drawRect(0f, height - dp(0.8f), width.toFloat(), height.toFloat(), line)
+            // candidates sit in a box: also a top edge, starting right of the composing tab
+            if (candBox.visibility == VISIBLE) {
+                val from = if (composingTab.visibility == VISIBLE) composingTab.width.toFloat() else 0f
+                canvas.drawRect(from, 0f, width.toFloat(), dp(0.8f), line)
+            }
+        }
     }
 
     init {
@@ -80,13 +90,18 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
 
         // ---- candidates
         candBox.orientation = LinearLayout.VERTICAL
-        composingRow.orientation = LinearLayout.HORIZONTAL
-        composingRow.gravity = Gravity.CENTER_VERTICAL
-        composing.setTextColor(Theme.TEXT)
-        composing.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-        composing.setPadding(dpi(12f), 0, dpi(8f), 0)
-        composing.isSingleLine = true
-        composing.setOnTouchListener { v, e ->
+        composingTab.setTextColor(Theme.TEXT)
+        composingTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+        composingTab.setPadding(dpi(12f), 0, dpi(14f), 0)
+        composingTab.gravity = Gravity.CENTER_VERTICAL
+        composingTab.isSingleLine = true
+        composingTab.background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(Theme.BAR)
+            val r = dp(12f)
+            cornerRadii = floatArrayOf(0f, 0f, r, r, 0f, 0f, 0f, 0f)
+        }
+        composingTab.visibility = INVISIBLE
+        composingTab.setOnTouchListener { v, e ->
             if (e.action == MotionEvent.ACTION_UP) {
                 val tv = v as TextView
                 val lay = tv.layout
@@ -94,12 +109,6 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
             }
             true
         }
-        composingRow.addView(composing, LinearLayout.LayoutParams(0, -1, 1f))
-        composingRow.addView(IconView(ctx, Icon.LEFT, Theme.HINT, 14f).apply { setOnClickListener { l.onComposingCursor(-1) } },
-            LinearLayout.LayoutParams(dpi(30f), -1))
-        composingRow.addView(IconView(ctx, Icon.RIGHT, Theme.HINT, 14f).apply { setOnClickListener { l.onComposingCursor(1) } },
-            LinearLayout.LayoutParams(dpi(30f), -1))
-        candBox.addView(composingRow, LinearLayout.LayoutParams(-1, dpi(18f)))
 
         val row = LinearLayout(ctx)
         row.orientation = LinearLayout.HORIZONTAL
@@ -110,7 +119,7 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
         row.addView(scroll, LinearLayout.LayoutParams(0, -1, 1f))
         expand.setOnClickListener { if (showingSuggestions) l.onCloseSuggestions() else l.onExpandCandidates() }
         row.addView(expand, LinearLayout.LayoutParams(dpi(46f), -1))
-        candBox.addView(row, LinearLayout.LayoutParams(-1, 0, 1f))
+        candBox.addView(row, LinearLayout.LayoutParams(-1, -1))
         addView(candBox, LayoutParams(-1, -1))
 
         // ---- status
@@ -128,6 +137,7 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
     }
 
     private fun only(v: View) {
+        if (v !== candBox || showingSuggestions) composingTab.visibility = INVISIBLE
         toolbar.visibility = if (v === toolbar) VISIBLE else GONE
         candBox.visibility = if (v === candBox) VISIBLE else GONE
         statusRow.visibility = if (v === statusRow) VISIBLE else GONE
@@ -146,24 +156,23 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
 
     fun showCandidates(composingText: String, caret: Int, cands: List<String>) {
         showingSuggestions = false
-        expand.icon = Icon.CHEVRON_DOWN; expand.invalidate()
-        composingRow.visibility = VISIBLE
+        expand.icon = if (Theme.flat) Icon.DOWN else Icon.CHEVRON_DOWN; expand.invalidate()
         val sb = SpannableStringBuilder(composingText)
         if (caret in 0 until composingText.length) {
             sb.insert(caret, "|")
             sb.setSpan(ForegroundColorSpan(Theme.ACCENT), caret, caret + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        composing.text = sb
+        composingTab.text = sb
+        composingTab.visibility = if (composingText.isEmpty()) INVISIBLE else VISIBLE
         fill(cands.map { Suggestion(it) }, highlightFirst = true) { l.onCandidate(it) }
         only(candBox)
+        invalidate()
     }
 
     /** Suggestions without composing text (calculator / phone / code / association). */
     fun showSuggestions(items: List<Suggestion>) {
         showingSuggestions = true
         expand.icon = Icon.CLOSE; expand.invalidate()
-        // keep the composing line's space so suggestions sit exactly where candidates do
-        composingRow.visibility = INVISIBLE
         fill(items, highlightFirst = false) { l.onSuggestion(it) }
         only(candBox)
     }
@@ -182,7 +191,7 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
     private class CandidateText(ctx: Context, val text: String, val tag: String?, val highlight: Boolean) : View(ctx) {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private var down = false
-        private val main = ctx.dp(20f)
+        private val main = ctx.dp(22f)
         private val small = ctx.dp(11f)
         override fun onMeasure(w: Int, h: Int) {
             p.textSize = main

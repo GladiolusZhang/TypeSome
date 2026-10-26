@@ -31,7 +31,8 @@ def keyboard_top(path):
     im = Image.open(path).convert("RGB")
     w, h = im.size
     x = w // 2 + 3
-    near = lambda c: all(abs(c[i] - GRAY[i]) < 6 for i in range(3))
+    # the gray background, or the slightly darker separator / bar lines on it
+    near = lambda c: max(c) - min(c) < 6 and 140 <= c[0] <= GRAY[0] + 5
     y = h - 1
     while y > 0 and not near(im.getpixel((x, y))):  # skip navigation bar
         y -= 1

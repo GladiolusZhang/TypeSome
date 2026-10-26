@@ -124,15 +124,23 @@ object Icons {
                 path.reset()
                 path.moveTo(12f, 3.5f); path.lineTo(21f, 12.5f); path.lineTo(16f, 12.5f); path.lineTo(16f, 19f)
                 path.lineTo(8f, 19f); path.lineTo(8f, 12.5f); path.lineTo(3f, 12.5f); path.close()
-                if (icon == Icon.SHIFT) { p.strokeWidth = 1.7f; c.drawPath(path, p) }
+                if (icon == Icon.SHIFT && !Theme.flat) { p.strokeWidth = 1.7f; c.drawPath(path, p) }
+                else if (icon == Icon.SHIFT) { p.style = Paint.Style.FILL; c.drawPath(path, p) }
                 else { p.style = Paint.Style.FILL; p.color = Theme.ACCENT; c.drawPath(path, p) }
                 if (icon == Icon.SHIFT_LOCK) { r.set(7f, 20.5f, 17f, 22.5f); c.drawRect(r, p) }
             }
             Icon.BACKSPACE -> {
                 path.reset()
                 path.moveTo(2f, 12f); path.lineTo(8f, 5.5f); path.lineTo(22f, 5.5f); path.lineTo(22f, 18.5f); path.lineTo(8f, 18.5f); path.close()
-                p.strokeWidth = 1.7f; c.drawPath(path, p)
-                c.drawLine(12f, 9.5f, 17f, 14.5f, p); c.drawLine(17f, 9.5f, 12f, 14.5f, p)
+                if (Theme.flat) {
+                    // seamless skins: solid key with the cross cut out, as in the reference
+                    p.style = Paint.Style.FILL; c.drawPath(path, p)
+                    p.color = Theme.BG; p.style = Paint.Style.STROKE; p.strokeWidth = 2f
+                    c.drawLine(11.5f, 9f, 17.5f, 15f, p); c.drawLine(17.5f, 9f, 11.5f, 15f, p)
+                } else {
+                    p.strokeWidth = 1.7f; c.drawPath(path, p)
+                    c.drawLine(12f, 9.5f, 17f, 14.5f, p); c.drawLine(17f, 9.5f, 12f, 14.5f, p)
+                }
             }
             Icon.ENTER -> {
                 p.style = Paint.Style.FILL
