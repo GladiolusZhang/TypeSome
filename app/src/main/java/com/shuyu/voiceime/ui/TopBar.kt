@@ -162,7 +162,8 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
     fun showSuggestions(items: List<Suggestion>) {
         showingSuggestions = true
         expand.icon = Icon.CLOSE; expand.invalidate()
-        composingRow.visibility = GONE
+        // keep the composing line's space so suggestions sit exactly where candidates do
+        composingRow.visibility = INVISIBLE
         fill(items, highlightFirst = false) { l.onSuggestion(it) }
         only(candBox)
     }

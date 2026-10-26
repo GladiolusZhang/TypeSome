@@ -251,7 +251,9 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
         if (k.hint != null) {
             paint.color = Theme.HINT
             if (stacked) {
-                paint.textSize = dp(if (Theme.flat) 13.5f else 11.5f); paint.textAlign = Paint.Align.CENTER
+                // the small "En" over 中 is quieter than the symbol hints over letters
+                val quiet = k.type == KeyType.LANG
+                paint.textSize = dp(if (Theme.flat) (if (quiet) 11.5f else 13.5f) else 11.5f); paint.textAlign = Paint.Align.CENTER
                 c.drawText(k.hint, cx, r.top + r.height() * (if (Theme.flat) 0.30f else 0.34f), paint)
             } else {
                 paint.textSize = dp(10.5f); paint.textAlign = Paint.Align.RIGHT
@@ -259,7 +261,7 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
             }
         }
         k.hintIcon?.let {
-            if (stacked) Icons.draw(c, it, cx, r.top + r.height() * 0.24f, dp(14f), Theme.HINT)
+            if (stacked) Icons.draw(c, it, cx, r.top + r.height() * 0.26f, dp(12f), Theme.HINT)
             else Icons.draw(c, it, r.right - dp(13f), r.top + dp(13.5f), dp(10f), Theme.HINT)
         }
         val icon = when (k.type) {
@@ -306,7 +308,8 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
             layout.name == "numbers" && k.type == KeyType.TEXT -> dp(26f)
             k.type == KeyType.TEXT && label.length == 1 && label[0].isLetter() -> dp(21.5f)
             k.type == KeyType.T9 -> dp(17f)
-            label.length >= 3 -> dp(15f)
+            k.type == KeyType.LANG || k.type == KeyType.SYMBOLS -> dp(16.5f)
+            label.length >= 3 -> dp(15.5f)
             k in fnKeys && !Theme.flat -> dp(17f)
             else -> dp(19f)
         }

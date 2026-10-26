@@ -91,6 +91,7 @@ for letter in "nihao":
 time.sleep(1)
 shot("02_composing")
 tap(space_x, space_y)
+shot("02b_associations")
 
 # voice overlay: hold space, then slide up to the middle card
 hold_and_shot(space_x, space_y, space_x, space_y, 3500, 2.0, "03_voice_hold")
