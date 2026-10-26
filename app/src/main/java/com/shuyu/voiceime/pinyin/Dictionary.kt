@@ -39,7 +39,8 @@ class Dictionary(
     private val charReading = HashMap<Char, String>()
     private val charReadingFreq = HashMap<Char, Int>()
 
-    private val next = HashMap<String, Next>(60_000)
+    /** Replaced in one go once loaded, so the keyboard can read it meanwhile. */
+    @Volatile private var next: Map<String, Next> = emptyMap()
     /** Sum of all word frequencies: turns a frequency into a probability. */
     private var totalFreq = 1e9
 
@@ -101,14 +102,16 @@ class Dictionary(
         sortedWords.addAll(wordFreq.keys.filter { it.length > 1 })
         sortedWords.sort()
         totalFreq = wordFreq.values.sumOf { it.toDouble() } + wordFreq.size
-        loadBigrams()
         loadUser()
         loaded = true
+        // typing works without them; they only sharpen the ranking, so they come in afterwards
+        loadBigrams()
     }
 
     private fun loadBigrams() {
         val input = openData("zh_bigram.txt") ?: return
         // share the word strings with the dictionary instead of keeping half a million copies
+        val map = HashMap<String, Next>(60_000)
         val canon = HashMap<String, String>(wordFreq.size * 2)
         for (w in wordFreq.keys) canon[w] = w
         BufferedReader(InputStreamReader(input, Charsets.UTF_8), 1 shl 16).useLines { lines ->
@@ -126,9 +129,10 @@ class Dictionary(
                     words[i] = canon[w] ?: w
                     counts[i] = p.substring(c + 1).toIntOrNull() ?: 1
                 }
-                next[canon[prev] ?: prev] = Next(line.substring(t1 + 1, t2).toIntOrNull() ?: counts.sum(), words, counts)
+                map[canon[prev] ?: prev] = Next(line.substring(t1 + 1, t2).toIntOrNull() ?: counts.sum(), words, counts)
             }
         }
+        next = map
     }
 
     // ---------------------------------------------------------------- context (word pairs)

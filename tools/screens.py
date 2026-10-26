@@ -76,20 +76,22 @@ weights = [1.15, 1.15, 1.05, 3.4, 1.05, 1.15, 1.6]
 space_x = (sum(weights[:3]) + weights[3] / 2) / sum(weights) * W
 space_y = row_y(3)
 
-# typing: n i h a o
-for letter in "nihao":
+def type_letters(word):
     rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
-    for ri, r in enumerate(rows):
-        if letter in r:
-            i = r.index(letter)
-            if ri == 0: x = (i + 0.5) / 10 * W
-            elif ri == 1: x = (i + 1.0) / 10 * W
-            else:
-                unit = W / (1.45 * 2 + 7)
-                x = unit * (1.45 + i + 0.5)
-            adb("input", "tap", str(int(x)), str(int(row_y(ri))))
-            time.sleep(0.4)
-time.sleep(1)
+    for letter in word:
+        for ri, r in enumerate(rows):
+            if letter in r:
+                i = r.index(letter)
+                if ri == 0: x = (i + 0.5) / 10 * W
+                elif ri == 1: x = (i + 1.0) / 10 * W
+                else:
+                    unit = W / (1.45 * 2 + 7)
+                    x = unit * (1.45 + i + 0.5)
+                adb("input", "tap", str(int(x)), str(int(row_y(ri))))
+                time.sleep(0.4)
+    time.sleep(1)
+
+type_letters("nihao")
 shot("02_composing")
 tap(space_x, space_y)
 shot("02b_associations")
@@ -122,3 +124,15 @@ adb("am", "start", "-n", "com.shuyu.voiceime/.SettingsActivity", "--ez", "demo",
 time.sleep(5)
 shot("11_day")
 hold_and_shot(space_x, space_y, space_x, space_y, 3500, 2.0, "12_day_voice")
+
+# whole-sentence guess, next-word suggestions, then English completions
+type_letters("wozaikaihui")
+shot("13_sentence")
+tap(space_x, space_y)
+time.sleep(1)
+shot("14_next_words")
+lang_x = (sum(weights[:1]) + weights[1] / 2) / sum(weights) * W
+tap(lang_x, row_y(3))
+time.sleep(1)
+type_letters("hel")
+shot("15_english")
