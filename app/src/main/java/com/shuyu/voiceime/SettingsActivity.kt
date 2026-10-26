@@ -242,6 +242,7 @@ class SettingsActivity : Activity() {
         }
 
         switch(llm, "「语音输入」也让大模型纠错（只改认错的词和口头更正，不改写；没填 Key 时跳过）", "plain_correct", true)
+        val profile = field(llm, "关于我（告诉模型你常说哪些领域的话，识别有歧义时优先往这边理解）", prefs.userProfile, multiline = true) { prefs.userProfile = it }
         field(llm, "我的词汇（每行一个，如 DeepSeek；固定替换写成 D四 => DeepSeek）", prefs.vocabulary,
             "DeepSeek\nD四 => DeepSeek", multiline = true) { prefs.vocabulary = it }
         val correct = field(llm, "「语音输入」纠错提示词", prefs.correctPrompt, multiline = true) { prefs.correctPrompt = it }
@@ -249,7 +250,7 @@ class SettingsActivity : Activity() {
         val translate = field(llm, "「翻译」提示词（{lang} 会替换成目标语言）", prefs.translatePrompt, multiline = true) { prefs.translatePrompt = it }
         val r3 = row(llm)
         button(r3, "恢复默认提示词") {
-            summary.setText(Prefs.DEFAULT_SUMMARY_PROMPT); translate.setText(Prefs.DEFAULT_TRANSLATE_PROMPT); correct.setText(Prefs.DEFAULT_CORRECT_PROMPT)
+            summary.setText(Prefs.DEFAULT_SUMMARY_PROMPT); translate.setText(Prefs.DEFAULT_TRANSLATE_PROMPT); correct.setText(Prefs.DEFAULT_CORRECT_PROMPT); profile.setText(Prefs.DEFAULT_PROFILE)
         }
         button(r3, "测试整理效果") { testLlm() }
 
