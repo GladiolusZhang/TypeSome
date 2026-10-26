@@ -1,0 +1,51 @@
+download https://downloads.sourceforge.net/libpinyin/model19.text.tar.gz
+libpinyin: 1724172 pairs, 36541084 tokens
+stream https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2018/mono/zh_cn.txt.gz
+  500000 lines, 367049 pairs
+  1000000 lines, 633327 pairs
+  1500000 lines, 854260 pairs
+  2000000 lines, 1036758 pairs
+  2500000 lines, 1264062 pairs
+  3000000 lines, 1414571 pairs
+  3500000 lines, 1570289 pairs
+  4000000 lines, 1760422 pairs
+  4500000 lines, 1912516 pairs
+  5000000 lines, 2060555 pairs
+  5500000 lines, 2237339 pairs
+  6000000 lines, 2389790 pairs
+  6500000 lines, 2534994 pairs
+  7000000 lines, 2685892 pairs
+  7500000 lines, 2798378 pairs
+  8000000 lines, 2903766 pairs
+subtitles: 2903766 pairs, 31565237 tokens
+  lccc urls: ['http://www.apache.org/licenses/LICENSE-2.0', 'https://arxiv.org/abs/2008.03946}', 'https://github.com/thu-coai/CDial-GPT', 'https://huggingface.co/datasets/silver/lccc/resolve/main/lccc_large.jsonl.gz', 'https://huggingface.co/datasets/silver/lccc/resolve/main/lccc_base_train.jsonl.gz', 'https://huggingface.co/datasets/silver/lccc/resolve/main/lccc_base_valid.jsonl.gz', 'https://huggingface.co/datasets/silver/lccc/resolve/main/lccc_base_test.jsonl.gz']
+download https://huggingface.co/datasets/silver/lccc/resolve/main/lccc_base_train.jsonl.gz
+  500000 lines, 809197 pairs
+  1000000 lines, 1301157 pairs
+  1500000 lines, 1705828 pairs
+  2000000 lines, 2059555 pairs
+  2500000 lines, 2378390 pairs
+  3000000 lines, 2671117 pairs
+  3500000 lines, 2942974 pairs
+  4000000 lines, 3196894 pairs
+  4500000 lines, 3437691 pairs
+  5000000 lines, 3667875 pairs
+  5500000 lines, 3886497 pairs
+  6000000 lines, 4096204 pairs
+  6500000 lines, 4298065 pairs
+  7000000 lines, 4492613 pairs
+  7500000 lines, 4679886 pairs
+  8000000 lines, 4862539 pairs
+lccc: 4862539 pairs, 50766726 tokens
+wrote 836126 pairs for 53097 words to data/zh_bigram.txt
+wrote 47999 spoken-language factors to data/zh_spoken.txt
+stream https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2018/mono/en.txt.gz
+  1000000 lines, 313214 pairs
+  2000000 lines, 527193 pairs
+  3000000 lines, 644395 pairs
+  4000000 lines, 771332 pairs
+  5000000 lines, 890499 pairs
+  6000000 lines, 1002109 pairs
+  7000000 lines, 1104166 pairs
+  8000000 lines, 1210440 pairs
+wrote 155420 English pairs to data/en_bigram.txt
