@@ -248,6 +248,14 @@ class SettingsActivity : Activity() {
                 requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), 2)
             Core.reloadContacts(this)
         }
+        kb.addView(TextView(this).apply { text = "皮肤"; setTextColor(Color.DKGRAY); setPadding(0, px(8f), 0, 0) })
+        val skins = listOf("auto" to "跟随系统", "light" to "浅色", "dark" to "深色", "classic" to "经典灰")
+        val skinGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        for ((key, name) in skins) skinGroup.addView(RadioButton(this).apply {
+            text = name; id = View.generateViewId(); tag = key; isChecked = prefs.skin == key
+        })
+        skinGroup.setOnCheckedChangeListener { g, id -> prefs.skin = g.findViewById<View>(id).tag as String }
+        kb.addView(skinGroup)
         kb.addView(TextView(this).apply { text = "键盘高度"; setTextColor(Color.DKGRAY); setPadding(0, px(8f), 0, 0) })
         kb.addView(SeekBar(this).apply {
             max = 50; progress = prefs.keyboardHeightPercent - 75

@@ -7,7 +7,7 @@
         <aapt:attr name="android:fillColor">
             <gradient android:type="linear"
                 android:startX="0" android:startY="0" android:endX="108" android:endY="108"
-                android:startColor="#5B8CFF" android:endColor="#7A4DF5" />
+                android:startColor="#2C2C30" android:endColor="#050506" />
         </aapt:attr>
     </path>
 </vector>

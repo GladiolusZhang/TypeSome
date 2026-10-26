@@ -42,6 +42,8 @@ class Prefs(context: Context) {
     val otpEnabled: Boolean get() = sp.getBoolean("otp", true)
     val calculator: Boolean get() = sp.getBoolean("calculator", true)
     val keyboardHeightPercent: Int get() = sp.getInt("kb_height", 100)
+    /** "auto" (follow system light/dark) | "light" | "dark" | "classic" (flat gray) */
+    var skin: String get() = str("skin", "auto"); set(v) = put("skin", v)
 
     companion object {
         val LANGUAGES = listOf("英语", "日语", "韩语", "法语", "德语", "西班牙语", "俄语", "葡萄牙语", "意大利语", "阿拉伯语", "泰语", "越南语", "繁体中文")

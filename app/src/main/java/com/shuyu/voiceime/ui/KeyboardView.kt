@@ -42,6 +42,10 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
     var rowHeightPx = dp(60f)
 
     private val rects = HashMap<Key, RectF>()
+    /** Keys drawn with the darker "function" cap. */
+    private val fnKeys = HashSet<Key>()
+    /** When each key was released, for the fade-out of the pressed shade. */
+    private val releasedAt = HashMap<Key, Long>()
     private var leftRect = RectF()
     private var leftScroll = 0f
 
@@ -73,6 +77,16 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
 
     private fun computeRects() {
         rects.clear()
+        fnKeys.clear()
+        val lastRow = layout.rows.lastIndex
+        for ((ri, row) in layout.rows.withIndex()) for (k in row) {
+            val fn = when (k.type) {
+                KeyType.TEXT -> layout.name != "numbers" && ri == lastRow
+                KeyType.T9, KeyType.SPACE, KeyType.PICK, KeyType.ENTER -> false
+                else -> true
+            }
+            if (fn) fnKeys.add(k)
+        }
         if (width == 0) return
         val pad = dp(3f)
         var left = pad
@@ -116,25 +130,50 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
 
     override fun onDraw(c: Canvas) {
         c.drawColor(Theme.BG)
-        paint.color = Theme.SEP
-        paint.strokeWidth = dp(0.8f)
-        val rowsTop = dp(3f)
-        val sepLeft = if (layout.leftColumn != null) leftRect.right + dp(10f) else dp(5f)
-        val sepRight = if (layout.leftColumn != null) rects[layout.rows[0].last()]!!.left - dp(10f) else width - dp(5f)
-        for (i in 1 until layout.rows.size) {
-            val y = rowsTop + i * rowHeightPx
-            c.drawLine(sepLeft, y, sepRight, y, paint)
+        val now = android.os.SystemClock.uptimeMillis()
+        var animating = false
+        if (Theme.flat) {
+            paint.color = Theme.SEP
+            paint.strokeWidth = dp(0.8f)
+            val rowsTop = dp(3f)
+            val sepLeft = if (layout.leftColumn != null) leftRect.right + dp(10f) else dp(5f)
+            val sepRight = if (layout.leftColumn != null) rects[layout.rows[0].last()]!!.left - dp(10f) else width - dp(5f)
+            for (i in 1 until layout.rows.size) {
+                val y = rowsTop + i * rowHeightPx
+                c.drawLine(sepLeft, y, sepRight, y, paint)
+            }
+            if (layout.leftColumn != null) c.drawLine(leftRect.right, leftRect.top + dp(10f), leftRect.right, leftRect.top + rowHeightPx * 2.6f, paint)
         }
         if (layout.leftColumn != null) {
-            c.drawLine(leftRect.right, leftRect.top + dp(10f), leftRect.right, leftRect.top + rowHeightPx * 2.6f, paint)
+            if (!Theme.flat) {
+                // the whole column is one tall function cap
+                capRect(leftRect)
+                paint.color = Theme.KEY_SHADOW
+                c.drawRoundRect(cap.left, cap.top + dp(1.2f), cap.right, cap.bottom + dp(1.2f), dp(7f), dp(7f), paint)
+                paint.color = Theme.KEY_FN
+                c.drawRoundRect(cap, dp(7f), dp(7f), paint)
+            }
             c.save()
-            c.clipRect(leftRect)
+            if (Theme.flat) c.clipRect(leftRect) else { capRect(leftRect); c.clipRect(cap) }
             c.translate(0f, -leftScroll)
-            layout.leftColumn!!.forEach { drawKey(c, it, rects[it]!!) }
+            layout.leftColumn!!.forEach { if (drawKey(c, it, rects[it]!!, now, true)) animating = true }
             c.restore()
         }
-        for (row in layout.rows) for (k in row) drawKey(c, k, rects[k] ?: continue)
+        for (row in layout.rows) for (k in row) if (drawKey(c, k, rects[k] ?: continue, now, false)) animating = true
         drawBubble(c)
+        if (animating) postInvalidateOnAnimation()
+    }
+
+    private val cap = RectF()
+    private fun capRect(r: RectF) = cap.set(r.left + dp(3f), r.top + dp(4f), r.right - dp(3f), r.bottom - dp(5f))
+
+    /** 0..1 pressed shade, fading out over 160ms after release. */
+    private fun pressLevel(k: Key, now: Long): Float {
+        if (k in pressed) return 1f
+        val t = releasedAt[k] ?: return 0f
+        val f = 1f - (now - t) / 160f
+        if (f <= 0f) { releasedAt.remove(k); return 0f }
+        return f
     }
 
     private fun showsBubble(k: Key) = (k.type == KeyType.TEXT || k.type == KeyType.T9) &&
@@ -168,59 +207,105 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
         if (t < 1f) postInvalidateOnAnimation()
     }
 
-    private fun drawKey(c: Canvas, k: Key, r: RectF) {
-        if (k in pressed && !(showsBubble(k) && bubbleKey === k)) {
-            paint.color = Theme.PRESSED
-            c.drawRoundRect(r.left + dp(2f), r.top + dp(4f), r.right - dp(2f), r.bottom - dp(4f), dp(6f), dp(6f), paint)
+    /** Draws one key; returns true while its press shade is still animating. */
+    private fun drawKey(c: Canvas, k: Key, r: RectF, now: Long, inLeft: Boolean): Boolean {
+        val level = pressLevel(k, now)
+        val accent = k.type == KeyType.ENTER && !Theme.flat
+        val fg = if (accent) Theme.ON_ACCENT else Theme.TEXT
+        if (Theme.flat) {
+            if (level > 0f) {
+                paint.color = Theme.PRESSED; paint.alpha = (255 * level).toInt()
+                c.drawRoundRect(r.left + dp(2f), r.top + dp(4f), r.right - dp(2f), r.bottom - dp(4f), dp(6f), dp(6f), paint)
+                paint.alpha = 255
+            }
+        } else if (inLeft) {
+            if (level > 0f) {
+                paint.color = blend(Theme.KEY_FN, Theme.KEY_FN_DOWN, level)
+                c.drawRect(r.left + dp(3f), r.top, r.right - dp(3f), r.bottom, paint)
+            }
+        } else {
+            capRect(r)
+            val fn = k in fnKeys
+            val base = when { accent -> Theme.ACCENT; fn -> Theme.KEY_FN; else -> Theme.KEY }
+            val down = when { accent -> blend(Theme.ACCENT, Color.BLACK, 0.18f); fn -> Theme.KEY_FN_DOWN; else -> Theme.KEY_DOWN }
+            paint.color = Theme.KEY_SHADOW
+            c.drawRoundRect(cap.left, cap.top + dp(1.2f), cap.right, cap.bottom + dp(1.2f), dp(7f), dp(7f), paint)
+            paint.color = blend(base, down, level)
+            c.drawRoundRect(cap, dp(7f), dp(7f), paint)
         }
+        drawContent(c, k, r, fg, inLeft)
+        return level > 0f && k !in pressed
+    }
+
+    private fun drawContent(c: Canvas, k: Key, r: RectF, fg: Int, inLeft: Boolean) {
         val cx = r.centerX()
+        // Classic skin and 9-key digits: hint centered above the label. Key caps: hint in the top-right corner.
+        val stacked = Theme.flat || k.type == KeyType.T9
         val hasHint = k.hint != null || k.hintIcon != null
-        val baseline = if (hasHint) r.top + r.height() * 0.62f else -1f
+        val baseline = if (hasHint && stacked) r.top + r.height() * 0.62f else -1f
+        paint.typeface = Typeface.DEFAULT
         if (k.hint != null) {
-            paint.color = Theme.HINT; paint.textSize = dp(13.5f); paint.textAlign = Paint.Align.CENTER; paint.typeface = Typeface.DEFAULT
-            c.drawText(k.hint, cx, r.top + r.height() * 0.30f, paint)
+            paint.color = Theme.HINT
+            if (stacked) {
+                paint.textSize = dp(if (Theme.flat) 13.5f else 11.5f); paint.textAlign = Paint.Align.CENTER
+                c.drawText(k.hint, cx, r.top + r.height() * (if (Theme.flat) 0.30f else 0.34f), paint)
+            } else {
+                paint.textSize = dp(10.5f); paint.textAlign = Paint.Align.RIGHT
+                c.drawText(k.hint, r.right - dp(8f), r.top + dp(17f), paint)
+            }
         }
-        k.hintIcon?.let { Icons.draw(c, it, cx, r.top + r.height() * 0.24f, dp(14f), Theme.HINT) }
+        k.hintIcon?.let {
+            if (stacked) Icons.draw(c, it, cx, r.top + r.height() * 0.24f, dp(14f), Theme.HINT)
+            else Icons.draw(c, it, r.right - dp(13f), r.top + dp(13.5f), dp(10f), Theme.HINT)
+        }
         val icon = when (k.type) {
             KeyType.SHIFT -> when (shiftState) { 1 -> Icon.SHIFT_ON; 2 -> Icon.SHIFT_LOCK; else -> Icon.SHIFT }
             else -> k.icon
         }
         if (k.type == KeyType.ENTER && enterLabel != null) {
-            paint.color = Theme.TEXT; paint.textSize = dp(15f); paint.textAlign = Paint.Align.CENTER
-            c.drawText(enterLabel!!, cx, r.centerY() + dp(5f), paint)
+            paint.color = fg; paint.textSize = dp(15f); paint.textAlign = Paint.Align.CENTER
+            c.drawText(enterLabel!!, cx, r.centerY() + dp(5f) - (if (Theme.flat) 0f else dp(0.5f)), paint)
             return
         }
+        val cy = if (Theme.flat) r.centerY() else r.centerY() - dp(0.5f)
         if (icon != null) {
             if (icon == Icon.SPACE_MIC) {
-                // mic above a "space bracket", as in the reference skin
-                Icons.draw(c, Icon.MIC, cx, r.top + r.height() * 0.40f, dp(15f), Theme.TEXT)
-                paint.color = Theme.TEXT; paint.strokeWidth = dp(2.4f); paint.strokeCap = Paint.Cap.ROUND
-                val hw = minOf(r.width() * 0.36f, dp(28f)); val by = r.top + r.height() * 0.64f
-                c.drawLine(cx - hw, by, cx + hw, by, paint)
-                c.drawLine(cx - hw, by, cx - hw, by - dp(4f), paint)
-                c.drawLine(cx + hw, by, cx + hw, by - dp(4f), paint)
+                if (Theme.flat) {
+                    // mic above a "space bracket", as in the reference skin
+                    Icons.draw(c, Icon.MIC, cx, r.top + r.height() * 0.40f, dp(15f), Theme.TEXT)
+                    paint.color = Theme.TEXT; paint.strokeWidth = dp(2.4f); paint.strokeCap = Paint.Cap.ROUND
+                    val hw = minOf(r.width() * 0.36f, dp(28f)); val by = r.top + r.height() * 0.64f
+                    c.drawLine(cx - hw, by, cx + hw, by, paint)
+                    c.drawLine(cx - hw, by, cx - hw, by - dp(4f), paint)
+                    c.drawLine(cx + hw, by, cx + hw, by - dp(4f), paint)
+                } else if (r.width() > dp(110f)) {
+                    paint.textSize = dp(13f); paint.textAlign = Paint.Align.LEFT; paint.color = Theme.HINT
+                    val label = "长按说话"
+                    val w = dp(16f) + paint.measureText(label)
+                    Icons.draw(c, Icon.MIC, cx - w / 2 + dp(6f), cy, dp(15f), Theme.HINT)
+                    c.drawText(label, cx - w / 2 + dp(16f), cy + dp(4.5f), paint)
+                } else Icons.draw(c, Icon.MIC, cx, cy, dp(17f), Theme.HINT)
             } else {
-                val size = when (icon) { Icon.BACKSPACE -> 30f; Icon.ENTER -> 28f; else -> 22f }
-                Icons.draw(c, icon, cx, r.centerY(), dp(size), Theme.TEXT)
+                val size = when (icon) { Icon.BACKSPACE -> if (Theme.flat) 30f else 24f; Icon.ENTER -> if (Theme.flat) 28f else 24f; else -> 22f }
+                Icons.draw(c, icon, cx, cy, dp(size), fg)
             }
             return
         }
         var label = k.label
         if (k.type == KeyType.TEXT && label.length == 1 && label[0].isLetter() && shiftState > 0) label = label.uppercase()
-        val inLeft = k in (layout.leftColumn ?: emptyList())
-        paint.color = if (k.small) Theme.HINT else Theme.TEXT
+        paint.color = if (k.small) Theme.HINT else fg
         paint.textAlign = Paint.Align.CENTER
-        paint.typeface = Typeface.DEFAULT
         paint.textSize = when {
             inLeft -> dp(17f)
-            k.small -> dp(17f)
+            k.small -> dp(if (Theme.flat) 17f else 15f)
             layout.name == "numbers" && k.type == KeyType.TEXT -> dp(26f)
             k.type == KeyType.TEXT && label.length == 1 && label[0].isLetter() -> dp(21.5f)
             k.type == KeyType.T9 -> dp(17f)
             label.length >= 3 -> dp(15f)
+            k in fnKeys && !Theme.flat -> dp(17f)
             else -> dp(19f)
         }
-        val y = if (baseline > 0) baseline else r.centerY() + paint.textSize * 0.36f
+        val y = if (baseline > 0) baseline else cy + paint.textSize * 0.36f
         c.drawText(label, cx, y, paint)
     }
 
@@ -321,7 +406,8 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
         cancelTimers()
         touches.remove(t.id)
         val k = t.key ?: return
-        pressed.remove(k); invalidate()
+        if (pressed.remove(k)) releasedAt[k] = android.os.SystemClock.uptimeMillis()
+        invalidate()
         if (cancelled || t.consumed || t.cursorMode || t.scrolled) return
         if (k.type == KeyType.BACKSPACE) { listener.onKey(k, "", false); return }
         val swipedUp = t.y0 - upY > rowHeightPx * 0.38f

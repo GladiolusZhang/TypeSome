@@ -54,7 +54,7 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
 
     override fun dispatchDraw(canvas: Canvas) {
         super.dispatchDraw(canvas)
-        canvas.drawRect(0f, height - dp(0.8f), width.toFloat(), height.toFloat(), line)
+        if (Theme.flat) canvas.drawRect(0f, height - dp(0.8f), width.toFloat(), height.toFloat(), line)
     }
 
     init {
@@ -66,7 +66,7 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
         fun tb(icon: Icon, action: String, size: Float = 28f) = IconView(ctx, icon, Theme.TEXT, size).apply {
             setOnClickListener { l.onToolbar(action) }
         }
-        fun divider() = View(ctx).apply { setBackgroundColor(Theme.OUTLINE) }
+        fun divider() = View(ctx).apply { setBackgroundColor(if (Theme.flat) Theme.OUTLINE else 0) }
         // Slots measured from the reference: 58dp logo | four evenly spaced tools | 58dp hide
         toolbar.addView(tb(Icon.LOGO, "settings", 27f), LinearLayout.LayoutParams(dpi(57f), -1))
         toolbar.addView(divider(), LinearLayout.LayoutParams(dpi(1f), dpi(21f)))

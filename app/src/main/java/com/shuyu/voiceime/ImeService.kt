@@ -104,6 +104,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     // ================================================================ views
 
     override fun onCreateInputView(): View {
+        Theme.apply(this, prefs.skin)
         barHeight = dp(44f).toInt()
         root = FrameLayout(this)
         root.setBackgroundColor(Theme.BG)
@@ -179,6 +180,10 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         super.onStartInputView(info, restarting)
         editorInfo = info
         prefs = Prefs(this)
+        // skin changed in settings, or the system switched light/dark: rebuild the views
+        val sig = Theme.signature
+        Theme.apply(this, prefs.skin)
+        if (sig != Theme.signature) setInputView(onCreateInputView())
         engine.fuzzy = prefs.fuzzyPinyin
         engine.autoCorrect = prefs.autoCorrect
         engine.learning = prefs.learnWords

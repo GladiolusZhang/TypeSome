@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Takes screenshots of the keyboard on a running emulator (used by the screenshots workflow).
 
-Finds the keyboard by its flat gray skin, then taps / holds keys at positions computed
+Finds the keyboard by its background color, then taps / holds keys at positions computed
 from the same dp proportions the app uses.
 """
 import os, subprocess, sys, time
@@ -9,7 +9,7 @@ from PIL import Image
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else "shots"
 os.makedirs(OUT, exist_ok=True)
-GRAY = (176, 176, 176)
+GRAY = (228, 230, 235)  # light skin background
 
 def adb(*a, out=None):
     if out:
@@ -52,6 +52,11 @@ def hold_and_shot(x, y, x2, y2, ms, at, name):
     time.sleep(1.5)
 
 d = density()
+# CI emulators often show "Pixel Launcher isn't responding": hide error dialogs and park the launcher
+subprocess.run(["adb", "shell", "settings", "put", "global", "hide_error_dialogs", "1"])
+subprocess.run(["adb", "shell", "pm", "disable-user", "--user", "0", "com.google.android.apps.nexuslauncher"])
+subprocess.run(["adb", "shell", "am", "broadcast", "-a", "android.intent.action.CLOSE_SYSTEM_DIALOGS"])
+time.sleep(2)
 adb("am", "start", "-n", "com.shuyu.voiceime/.SettingsActivity", "--ez", "demo", "true")
 time.sleep(5)
 first = shot("01_pinyin")

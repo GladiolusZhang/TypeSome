@@ -1,6 +1,7 @@
 package com.shuyu.voiceime.ui
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -10,20 +11,64 @@ import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 
-/** Gray flat skin, matching the reference screenshots. */
+/**
+ * Keyboard colors. Three skins:
+ *  - light / dark: rounded key caps on a soft background (default; dark follows the system)
+ *  - classic: the flat gray skin of the reference screenshots (no key caps, thin row separators)
+ */
 object Theme {
-    // Sampled from the reference screenshots (flat gray skin).
-    val BG = Color.parseColor("#B0B0B0")
-    val BAR = Color.parseColor("#B0B0B0")
-    val BAR_LINE = Color.parseColor("#999999")
-    val TEXT = Color.parseColor("#484F59")
-    val HINT = Color.parseColor("#646B75")
-    val SEP = Color.parseColor("#9D9D9D")
-    val PRESSED = Color.parseColor("#9C9C9C")
-    val ACCENT = Color.parseColor("#2F7BEA")
-    val CARD = Color.parseColor("#C2C2C2")
-    val OUTLINE = Color.parseColor("#8A8A8A")
-    val BUBBLE = Color.parseColor("#F4F4F6")
+    var BG = 0; var BAR = 0; var BAR_LINE = 0
+    var TEXT = 0; var HINT = 0; var SEP = 0; var PRESSED = 0
+    var ACCENT = 0; var ON_ACCENT = Color.WHITE
+    var CARD = 0; var OUTLINE = 0; var BUBBLE = 0
+    /** Key caps (letter keys), function keys, and their pressed shades. */
+    var KEY = 0; var KEY_FN = 0; var KEY_DOWN = 0; var KEY_FN_DOWN = 0; var KEY_SHADOW = 0
+    /** Classic flat skin: no key caps. */
+    var flat = false; private set
+    var dark = false; private set
+    /** Changes whenever the effective skin changes, so the service knows to rebuild its views. */
+    var signature = ""; private set
+
+    private fun c(s: String) = Color.parseColor(s)
+
+    /** skin: "auto" | "light" | "dark" | "classic" */
+    fun apply(ctx: Context, skin: String) {
+        val night = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        palette(if (skin == "auto") (if (night) "dark" else "light") else skin)
+    }
+
+    private fun palette(s: String) {
+        signature = s
+        flat = s == "classic"; dark = s == "dark"
+        when (s) {
+            "dark" -> {
+                BG = c("#1B1B1D"); BAR = BG; BAR_LINE = c("#2A2A2D")
+                KEY = c("#3B3B3F"); KEY_FN = c("#2A2A2E"); KEY_DOWN = c("#56565C"); KEY_FN_DOWN = c("#44444A"); KEY_SHADOW = c("#0E0E10")
+                TEXT = c("#EDEDF0"); HINT = c("#8E8E95"); SEP = c("#333337"); PRESSED = c("#38383D")
+                ACCENT = c("#4C8DFF"); CARD = c("#2C2C30"); OUTLINE = c("#4A4A50"); BUBBLE = c("#4A4A50")
+            }
+            "classic" -> {
+                BG = c("#B0B0B0"); BAR = BG; BAR_LINE = c("#999999")
+                KEY = BG; KEY_FN = BG; KEY_DOWN = c("#9C9C9C"); KEY_FN_DOWN = KEY_DOWN; KEY_SHADOW = 0
+                TEXT = c("#484F59"); HINT = c("#646B75"); SEP = c("#9D9D9D"); PRESSED = c("#9C9C9C")
+                ACCENT = c("#2F7BEA"); CARD = c("#C2C2C2"); OUTLINE = c("#8A8A8A"); BUBBLE = c("#F4F4F6")
+            }
+            else -> {
+                BG = c("#E4E6EB"); BAR = BG; BAR_LINE = c("#D5D8DE")
+                KEY = Color.WHITE; KEY_FN = c("#C9CDD5"); KEY_DOWN = c("#D9DCE2"); KEY_FN_DOWN = c("#B3B8C2"); KEY_SHADOW = c("#A9AEB8")
+                TEXT = c("#1D2129"); HINT = c("#868C96"); SEP = c("#D0D3D9"); PRESSED = c("#D3D6DC")
+                ACCENT = c("#2F6FEB"); CARD = Color.WHITE; OUTLINE = c("#C3C7CF"); BUBBLE = Color.WHITE
+            }
+        }
+    }
+
+    init { palette("light") }
+}
+
+/** Linear blend of two ARGB colors. */
+fun blend(a: Int, b: Int, t: Float): Int {
+    fun ch(s: Int) = (((a shr s) and 0xff) + (((b shr s) and 0xff) - ((a shr s) and 0xff)) * t).toInt() shl s
+    return ch(24) or ch(16) or ch(8) or ch(0)
 }
 
 fun Context.dp(v: Float): Float = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
@@ -63,17 +108,15 @@ object Icons {
                 path.reset()
                 path.moveTo(12f, 3.5f); path.lineTo(21f, 12.5f); path.lineTo(16f, 12.5f); path.lineTo(16f, 19f)
                 path.lineTo(8f, 19f); path.lineTo(8f, 12.5f); path.lineTo(3f, 12.5f); path.close()
-                p.style = Paint.Style.FILL
-                if (icon == Icon.SHIFT) p.color = color else p.color = Theme.ACCENT
-                c.drawPath(path, p)
+                if (icon == Icon.SHIFT) { p.strokeWidth = 1.7f; c.drawPath(path, p) }
+                else { p.style = Paint.Style.FILL; p.color = Theme.ACCENT; c.drawPath(path, p) }
                 if (icon == Icon.SHIFT_LOCK) { r.set(7f, 20.5f, 17f, 22.5f); c.drawRect(r, p) }
             }
             Icon.BACKSPACE -> {
                 path.reset()
                 path.moveTo(2f, 12f); path.lineTo(8f, 5.5f); path.lineTo(22f, 5.5f); path.lineTo(22f, 18.5f); path.lineTo(8f, 18.5f); path.close()
-                p.style = Paint.Style.FILL; c.drawPath(path, p)
-                p.color = Theme.BG; p.style = Paint.Style.STROKE; p.strokeWidth = 2f
-                c.drawLine(11.5f, 9f, 17.5f, 15f, p); c.drawLine(17.5f, 9f, 11.5f, 15f, p)
+                p.strokeWidth = 1.7f; c.drawPath(path, p)
+                c.drawLine(12f, 9.5f, 17f, 14.5f, p); c.drawLine(17f, 9.5f, 12f, 14.5f, p)
             }
             Icon.ENTER -> {
                 p.style = Paint.Style.FILL

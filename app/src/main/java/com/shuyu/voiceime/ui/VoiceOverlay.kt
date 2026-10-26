@@ -130,7 +130,7 @@ class VoiceOverlay(ctx: Context, private val onFeedback: () -> Unit, private val
         val cw = (width - pad * 4) / 3f
         val top = dp(12f)
         val ch = minOf(height * 0.30f, dp(64f))
-        val white = Color.argb(140, 255, 255, 255)
+        val white = if (Theme.flat) Color.argb(140, 255, 255, 255) else Theme.KEY
         for (i in 0..2) {
             val t = sel[i]
             val r = cards[i]
