@@ -449,6 +449,18 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
                 }
                 main.postDelayed(repeatRunnable!!, 380)
             }
+            k.type == KeyType.SYMBOLS -> {
+                // long-press 符 opens the emoji panel
+                longPressRunnable = Runnable {
+                    if (touches[t.id] === t) {
+                        t.consumed = true
+                        listener.onFeedback()
+                        listener.onKey(k, "", true)
+                        pressed.remove(k); invalidate()
+                    }
+                }
+                main.postDelayed(longPressRunnable!!, 380)
+            }
             k.hint != null -> {
                 longPressRunnable = Runnable {
                     if (touches[t.id] === t) {

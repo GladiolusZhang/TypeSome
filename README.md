@@ -53,4 +53,5 @@ python3 tools/gen_dict.py        # 下载 rime-ice 词库并生成 app/src/main/
 - 签名用的是仓库里的 `app/voiceime.keystore`（密码在 `app/build.gradle.kts`），方便每次新版本直接覆盖安装。如果打算公开发布，请换成自己的密钥并通过环境变量 `KEYSTORE_FILE` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` 传入。
 - 小米、OPPO、vivo、华为等系统有「验证码保护」，会挡住第三方 App 读取验证码短信。这些厂商没有开放给输入法的验证码接口，所以这里改为读取通知；如仍不行，请在系统短信 App 设置里关闭验证码保护。
 - 皮肤：默认「无缝」，白天纯白、夜间灰色，跟随系统深浅色；设置里还可以选圆角按键风格。
+- 表情库来自 Unicode 官方 emoji-test.txt（`tools/gen_emoji.py` 生成 `assets/emoji.txt`），手机字体画不出来的会自动隐藏。
 - 暂未实现：笔画、五笔、英文九键、更多语言。

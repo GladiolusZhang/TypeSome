@@ -218,13 +218,13 @@ class EmojiPanel(ctx: Context, private val host: PanelHost, private val recent: 
         if (name == "Emoji") {
             val all = ArrayList<String>()
             val sections = ArrayList<Pair<String, Int>>()
-            val cats = (if (recent.isNotEmpty()) listOf("常用" to recent) else emptyList()) + categories
+            val cats = (if (recent.isNotEmpty()) listOf(RECENT_TITLE to recent) else emptyList()) + categories
             for ((title, items) in cats) { sections.add(title to all.size); all.addAll(items) }
             grid.set(all, 26f, { s -> host.commit(s); onUse(s) }, sections)
             // bottom category bar with grey emoji icons
             val gray = Paint().apply { colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) }) }
             cats.forEachIndexed { i, (title, items) ->
-                val icon = if (title == "常用") IconView(context, Icon.CLOCK, Theme.TEXT, 24f)
+                val icon = if (title == RECENT_TITLE) IconView(context, Icon.CLOCK, Theme.TEXT, 24f)
                 else context.tv(items.firstOrNull() ?: "?", 22f).apply { setLayerType(LAYER_TYPE_HARDWARE, gray); alpha = 0.75f }
                 icon.setOnClickListener { grid.scrollToSection(i) }
                 bottom.addView(icon, LayoutParams(0, -1, 1f))
@@ -235,22 +235,29 @@ class EmojiPanel(ctx: Context, private val host: PanelHost, private val recent: 
         bottom.addView(IconView(context, Icon.BACKSPACE, Theme.TEXT, 24f).apply { setOnClickListener { host.backspace() } }, LayoutParams(0, -1, 1f))
     }
 
+    /** Full Unicode emoji set from assets/emoji.txt, minus whatever this phone's font can't draw. */
     private fun buildEmoji(): List<Pair<String, List<String>>> {
+        cached?.let { return it }
         val p = Paint()
-        fun range(vararg r: IntRange) = r.flatMap { it.toList() }.map { String(Character.toChars(it)) }.filter { p.hasGlyph(it) }
-        return listOf(
-            "笑脸与情感" to range(0x1F600..0x1F637, 0x1F641..0x1F644, 0x1F910..0x1F92F, 0x1F970..0x1F976, 0x1F978..0x1F97A, 0x1F9D0..0x1F9D0),
-            "手势与人物" to range(0x1F44A..0x1F450, 0x1F590..0x1F590, 0x1F595..0x1F596, 0x1F64B..0x1F64F, 0x1F918..0x1F91F, 0x1F4AA..0x1F4AA, 0x1F466..0x1F469, 0x1F474..0x1F478),
-            "动物与自然" to range(0x1F400..0x1F43F, 0x1F98A..0x1F9AE, 0x1F331..0x1F33F, 0x1F340..0x1F344),
-            "食物" to range(0x1F345..0x1F37F, 0x1F950..0x1F96F, 0x1F9C0..0x1F9CB),
-            "活动" to range(0x1F380..0x1F393, 0x1F3A0..0x1F3CA, 0x26BD..0x26BE, 0x1F94A..0x1F94F),
-            "旅行与地点" to range(0x1F680..0x1F6A4, 0x1F3E0..0x1F3F0, 0x1F30D..0x1F320),
-            "物品" to range(0x1F4A1..0x1F4A9, 0x1F4AB..0x1F4FC, 0x1F50B..0x1F52E),
-            "符号" to range(0x2764..0x2764, 0x1F493..0x1F49F, 0x2705..0x2705, 0x274C..0x274C, 0x2753..0x2757, 0x1F4AF..0x1F4AF),
-        ).filter { it.second.isNotEmpty() }
+        val out = ArrayList<Pair<String, List<String>>>()
+        try {
+            context.assets.open("emoji.txt").bufferedReader().useLines { lines ->
+                var title: String? = null
+                for (line in lines) {
+                    if (line.startsWith("# ")) { title = line.substring(2).trim(); continue }
+                    val t = title ?: continue
+                    val items = line.split(' ').filter { it.isNotEmpty() && p.hasGlyph(it) }
+                    if (items.isNotEmpty()) out.add(t to items)
+                }
+            }
+        } catch (_: Exception) {}
+        cached = out
+        return out
     }
 
     companion object {
+        private var cached: List<Pair<String, List<String>>>? = null
+        const val RECENT_TITLE = "最近使用"
         val KAOMOJI = listOf("(＾▽＾)", "(๑•̀ㅂ•́)و✧", "(｡･ω･｡)", "(*^▽^*)", "o(╥﹏╥)o", "(╯°□°）╯︵ ┻━┻", "¯\\_(ツ)_/¯",
             "(≧∇≦)ﾉ", "(´･ω･`)", "ヾ(≧▽≦*)o", "(ಥ_ಥ)", "(⊙_⊙)?", "(￣▽￣)~*", "(｀・ω・´)", "(*/ω＼*)", "(～￣▽￣)～",
             "(=^･ω･^=)", "(T_T)", "(^_−)☆", "(｡♥‿♥｡)", "(￣ー￣)", "(•_•)", "(°ロ°)", "Σ(っ°Д°;)っ", "(っ´ω`c)", "ᕦ(ò_óˇ)ᕤ",

@@ -341,7 +341,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             }
             KeyType.NUM_PAD -> { finishComposing(raw = false); numbers = true; applyLayout() }
             KeyType.BACK -> { numbers = false; applyLayout() }
-            KeyType.SYMBOLS -> { finishComposing(raw = false); showPanel("symbols") }
+            KeyType.SYMBOLS -> { finishComposing(raw = false); showPanel(if (alt) "emoji" else "symbols") }
         }
     }
 
@@ -657,7 +657,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         finishComposing(raw = false)
         val v: View = when (name) {
             "symbols" -> SymbolPanel(this, this, recent("recent_symbols")) { remember("recent_symbols", it) }
-            "emoji" -> EmojiPanel(this, this, recent("recent_emoji")) { remember("recent_emoji", it) }
+            "emoji" -> EmojiPanel(this, this, recent("recent_emoji")) { remember("recent_emoji", it, EMOJI_HISTORY) }
             "edit" -> EditPanel(this, this, barHeight)
             "clipboard" -> ClipboardPanel(this, this, barHeight)
             "modes" -> ModePanel(this, this, barHeight)
@@ -757,9 +757,12 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     private fun recent(key: String): List<String> =
         prefs.sp.getString(key, "")!!.split('\u0001').filter { it.isNotEmpty() }
 
-    private fun remember(key: String, s: String) {
+    /** Most recent first; using one again moves it to the front, and the oldest drops off past [limit]. */
+    private fun remember(key: String, s: String, limit: Int = 32) {
         val list = recent(key).toMutableList()
         list.remove(s); list.add(0, s)
-        prefs.sp.edit().putString(key, list.take(32).joinToString("\u0001")).apply()
+        prefs.sp.edit().putString(key, list.take(limit).joinToString("\u0001")).apply()
     }
+
+    private companion object { const val EMOJI_HISTORY = 24 }
 }
