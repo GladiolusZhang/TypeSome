@@ -26,6 +26,8 @@ class Prefs(context: Context) {
     var llmModel: String get() = str("llm_model", "Qwen/Qwen2.5-7B-Instruct"); set(v) = put("llm_model", v)
     var summaryPrompt: String get() = str("summary_prompt", DEFAULT_SUMMARY_PROMPT); set(v) = put("summary_prompt", v)
     var translatePrompt: String get() = str("translate_prompt", DEFAULT_TRANSLATE_PROMPT); set(v) = put("translate_prompt", v)
+    /** Ask models that can "think" (DeepSeek, Qwen3…) to answer directly: much faster for short texts. */
+    val noThinking: Boolean get() = sp.getBoolean("no_thinking", true)
     var targetLanguage: String get() = str("target_language", "英语"); set(v) = put("target_language", v)
 
     /** Key used for LLM calls; falls back to the ASR key when both use the same provider. */

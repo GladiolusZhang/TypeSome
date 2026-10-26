@@ -73,12 +73,12 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
                     Mode.PLAIN -> text
                     Mode.SUMMARY -> {
                         post(id) { ui.onStatus("AI 整理中…") }
-                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt, text)
+                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt, text, prefs.noThinking)
                     }
                     Mode.TRANSLATE -> {
                         post(id) { ui.onStatus("翻译成${prefs.targetLanguage}…") }
                         val sys = prefs.translatePrompt.replace("{lang}", prefs.targetLanguage)
-                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, sys, text)
+                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, sys, text, prefs.noThinking)
                     }
                 }
                 post(id) { ui.onStatus(null); ui.onResult(out) }

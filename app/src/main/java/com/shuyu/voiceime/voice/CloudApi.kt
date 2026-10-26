@@ -36,7 +36,7 @@ object CloudApi {
         }
     }
 
-    fun chat(baseUrl: String, apiKey: String, model: String, system: String, user: String): String {
+    fun chat(baseUrl: String, apiKey: String, model: String, system: String, user: String, noThinking: Boolean = true): String {
         if (apiKey.isBlank()) throw IOException("未填写大模型 API Key")
         val json = JSONObject()
             .put("model", model)
@@ -45,6 +45,14 @@ object CloudApi {
             .put("messages", JSONArray()
                 .put(JSONObject().put("role", "system").put("content", system))
                 .put(JSONObject().put("role", "user").put("content", user)))
+        if (noThinking) {
+            // Each provider has its own switch; only send it where it is understood.
+            val host = baseUrl.lowercase()
+            when {
+                "deepseek" in host -> json.put("thinking", JSONObject().put("type", "disabled"))
+                "siliconflow" in host || "dashscope" in host -> json.put("enable_thinking", false)
+            }
+        }
         val req = Request.Builder().url(url(baseUrl, "/chat/completions"))
             .header("Authorization", "Bearer $apiKey")
             .post(json.toString().toRequestBody("application/json".toMediaType())).build()

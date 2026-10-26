@@ -205,6 +205,8 @@ class SettingsActivity : Activity() {
         field(llm, "接口地址", prefs.llmBaseUrl, "https://api.siliconflow.cn/v1") { prefs.llmBaseUrl = it }
         field(llm, "API Key（可留空）", prefs.llmApiKey, "留空 = 使用语音识别的 Key", password = true) { prefs.llmApiKey = it }
         field(llm, "模型", prefs.llmModel, "Qwen/Qwen2.5-7B-Instruct") { prefs.llmModel = it }
+        switch(llm, "关闭深度思考（更快；DeepSeek、硅基流动、阿里百炼的思考模型有效）", "no_thinking", true)
+        note(llm, "例如 DeepSeek：接口地址填 https://api.deepseek.com ，模型填你要用的模型名。")
 
         llm.addView(TextView(this).apply { text = "翻译目标语言"; setTextColor(Color.DKGRAY); setPadding(0, px(10f), 0, 0) })
         val langs = Prefs.LANGUAGES + "自定义…"
@@ -397,7 +399,7 @@ class SettingsActivity : Activity() {
         val sample = "嗯那个就是我想说一下啊，明天的会议呢改到下午三点，呃不对是三点半，然后地点还是在那个三楼会议室，大家记得带电脑哈"
         val dlg = AlertDialog.Builder(this).setTitle("测试中…").setMessage("原文：$sample").setPositiveButton("关闭", null).show()
         io.execute {
-            val out = try { CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt, sample) }
+            val out = try { CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt, sample, prefs.noThinking) }
             catch (e: Exception) { "出错：${e.message}" }
             main.post { dlg.setTitle("整理结果"); dlg.setMessage("原文：$sample\n\n结果：\n$out") }
         }
