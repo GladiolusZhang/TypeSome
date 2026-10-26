@@ -64,6 +64,7 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
         toolbar.addView(divider(), LinearLayout.LayoutParams(dpi(1f), dpi(22f)))
         toolbar.addView(tb(Icon.KEYBOARD, "modes"), LinearLayout.LayoutParams(0, -1, 1.4f))
         toolbar.addView(tb(Icon.CURSOR, "edit"), LinearLayout.LayoutParams(0, -1, 1.4f))
+        toolbar.addView(tb(Icon.MIC, "voice", 26f), LinearLayout.LayoutParams(0, -1, 1.4f))
         toolbar.addView(tb(Icon.SMILE, "emoji"), LinearLayout.LayoutParams(0, -1, 1.4f))
         toolbar.addView(tb(Icon.CLOCK, "clipboard", 26f), LinearLayout.LayoutParams(0, -1, 1.2f))
         toolbar.addView(divider(), LinearLayout.LayoutParams(dpi(1f), dpi(22f)))

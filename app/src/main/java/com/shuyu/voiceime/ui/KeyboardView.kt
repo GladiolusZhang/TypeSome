@@ -21,11 +21,14 @@ import kotlin.math.abs
 class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
 
     interface Listener {
-        fun onKey(key: Key, output: String)
+        /** alt = produced by swipe-up / long-press (the key's secondary character) */
+        fun onKey(key: Key, output: String, alt: Boolean)
         fun onCursorMove(delta: Int)
         fun onVoiceStart(): Boolean
-        /** mode 0..2, or -1 for cancel */
-        fun onVoiceEnd(mode: Int)
+        /** Finger position (screen coordinates) while holding the space bar during recording. */
+        fun onVoiceTrack(rawX: Float, rawY: Float)
+        /** Finger lifted (cancelled = gesture was aborted). */
+        fun onVoiceRelease(cancelled: Boolean)
         fun onFeedback()
     }
 
@@ -37,7 +40,6 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
     var enterLabel: String? = null
         set(v) { field = v; invalidate() }
     var rowHeightPx = dp(54f)
-    var voiceModeLabels = arrayOf("语音输入" to "直接转文字", "智能整理" to "去口水词 · 更有条理", "翻译" to "→ 英语")
 
     private val rects = HashMap<Key, RectF>()
     private var leftRect = RectF()
@@ -60,18 +62,7 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
     private var longPressRunnable: Runnable? = null
     private var repeatRunnable: Runnable? = null
 
-    // voice overlay
     var voiceActive = false; private set
-    private var voiceSel = 0
-    private var voiceLevel = 0f
-    private val levels = FloatArray(24)
-
-    fun setVoiceLevel(l: Float) {
-        voiceLevel = voiceLevel * 0.5f + l * 0.5f
-        System.arraycopy(levels, 1, levels, 0, levels.size - 1)
-        levels[levels.size - 1] = voiceLevel
-        if (voiceActive) invalidate()
-    }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
@@ -134,7 +125,6 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
             c.restore()
         }
         for (row in layout.rows) for (k in row) drawKey(c, k, rects[k] ?: continue)
-        if (voiceActive) drawVoice(c)
     }
 
     private fun drawKey(c: Canvas, k: Key, r: RectF) {
@@ -188,64 +178,6 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
         c.drawText(label, cx, labelY + paint.textSize * 0.35f, paint)
     }
 
-    private val cardRects = Array(3) { RectF() }
-    private val cancelRect = RectF()
-
-    private fun drawVoice(c: Canvas) {
-        c.drawColor(Color.argb(235, 0xA8, 0xA8, 0xA8))
-        val pad = dp(10f)
-        val cw = (width - pad * 4) / 3f
-        val ctop = dp(10f)
-        val ch = minOf(height * 0.36f, dp(78f))
-        for (i in 0..2) {
-            val r = cardRects[i]
-            r.set(pad + i * (cw + pad), ctop, pad + i * (cw + pad) + cw, ctop + ch)
-            val sel = voiceSel == i
-            paint.color = if (sel) Theme.ACCENT else Color.argb(150, 255, 255, 255)
-            c.drawRoundRect(r, dp(12f), dp(12f), paint)
-            paint.textAlign = Paint.Align.CENTER
-            paint.color = if (sel) Color.WHITE else Theme.TEXT
-            paint.textSize = dp(17f); paint.isFakeBoldText = true
-            c.drawText(voiceModeLabels[i].first, r.centerX(), r.top + ch * 0.45f, paint)
-            paint.isFakeBoldText = false
-            paint.textSize = dp(11.5f)
-            paint.color = if (sel) Color.argb(220, 255, 255, 255) else Theme.HINT
-            c.drawText(voiceModeLabels[i].second, r.centerX(), r.top + ch * 0.76f, paint)
-        }
-        // level bars
-        val midY = ctop + ch + (height - ctop - ch) * 0.42f
-        val barW = dp(4f); val gap = dp(3.5f)
-        val total = levels.size * (barW + gap)
-        var x = width / 2f - total / 2f
-        paint.color = if (voiceSel == -1) Theme.HINT else Theme.ACCENT
-        for (l in levels) {
-            val h = dp(4f) + l * dp(34f)
-            c.drawRoundRect(x, midY - h / 2, x + barW, midY + h / 2, barW / 2, barW / 2, paint)
-            x += barW + gap
-        }
-        paint.color = Theme.TEXT; paint.textSize = dp(14f); paint.textAlign = Paint.Align.CENTER
-        val tip = when (voiceSel) { -1 -> "松手取消"; else -> "正在聆听 · 上滑选择模式 · 松手结束" }
-        c.drawText(tip, width / 2f, midY + dp(36f), paint)
-        // cancel pill
-        val cy = height - rowHeightPx / 2f
-        cancelRect.set(dp(12f), cy - dp(20f), dp(12f) + dp(92f), cy + dp(20f))
-        paint.color = if (voiceSel == -1) Color.parseColor("#E5484D") else Color.argb(150, 255, 255, 255)
-        c.drawRoundRect(cancelRect, dp(20f), dp(20f), paint)
-        paint.color = if (voiceSel == -1) Color.WHITE else Theme.TEXT; paint.textSize = dp(15f)
-        c.drawText("✕ 取消", cancelRect.centerX(), cancelRect.centerY() + dp(5f), paint)
-    }
-
-    private fun updateVoiceSel(x: Float, y: Float) {
-        val old = voiceSel
-        val cardsBottom = cardRects[0].bottom + dp(24f)
-        voiceSel = when {
-            cancelRect.contains(x, y) || (x < cancelRect.right + dp(10f) && y > cancelRect.top - dp(10f)) -> -1
-            y < cardsBottom -> ((x / width) * 3).toInt().coerceIn(0, 2)
-            else -> 0
-        }
-        if (old != voiceSel) { listener.onFeedback(); invalidate() }
-    }
-
     // ---------------------------------------------------------------- touch handling
     private fun keyAt(x: Float, y: Float): Key? {
         if (layout.leftColumn != null && leftRect.contains(x, y)) {
@@ -288,21 +220,23 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until e.pointerCount) {
                     val t = touches[e.getPointerId(i)] ?: continue
+                    if (voiceActive) { listener.onVoiceTrack(e.getX(i) + e.rawX - e.x, e.getY(i) + e.rawY - e.y); continue }
                     move(t, e.getX(i), e.getY(i))
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val t = touches[e.getPointerId(idx)] ?: return true
                 if (voiceActive) {
-                    updateVoiceSel(e.getX(idx), e.getY(idx))
-                    endVoice(voiceSel)
+                    listener.onVoiceTrack(e.getX(idx) + e.rawX - e.x, e.getY(idx) + e.rawY - e.y)
+                    voiceActive = false
                     touches.remove(t.id)
+                    listener.onVoiceRelease(false)
                     return true
                 }
                 finish(t, cancelled = false, upX = e.getX(idx), upY = e.getY(idx))
             }
             MotionEvent.ACTION_CANCEL -> {
-                if (voiceActive) endVoice(-1)
+                if (voiceActive) { voiceActive = false; listener.onVoiceRelease(true) }
                 touches.values.toList().forEach { finish(it, cancelled = true) }
             }
         }
@@ -310,7 +244,6 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
     }
 
     private fun move(t: Touch, x: Float, y: Float) {
-        if (voiceActive) { updateVoiceSel(x, y); return }
         val k = t.key ?: return
         if (t.inLeftColumn) {
             val dy = y - t.lastY
@@ -342,10 +275,10 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
         val k = t.key ?: return
         pressed.remove(k); invalidate()
         if (cancelled || t.consumed || t.cursorMode || t.scrolled) return
-        if (k.type == KeyType.BACKSPACE) { listener.onKey(k, ""); return }
+        if (k.type == KeyType.BACKSPACE) { listener.onKey(k, "", false); return }
         val swipedUp = t.y0 - upY > rowHeightPx * 0.38f
-        val out = if (swipedUp && k.hint != null) k.hint else if (swipedUp && k.type == KeyType.LANG) "" else k.text
-        listener.onKey(k, out)
+        val alt = swipedUp && k.hint != null
+        listener.onKey(k, if (alt) k.hint!! else k.text, alt)
     }
 
     private fun scheduleLong(t: Touch) {
@@ -357,8 +290,7 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
                     if (touches[t.id] === t && !t.cursorMode && listener.onVoiceStart()) {
                         t.consumed = true
                         pressed.clear()
-                        voiceActive = true; voiceSel = 0
-                        levels.fill(0f)
+                        voiceActive = true
                         invalidate()
                     }
                 }
@@ -369,7 +301,7 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
                     override fun run() {
                         if (touches[t.id] !== t) return
                         t.consumed = true
-                        listener.onKey(k, "")
+                        listener.onKey(k, "", false)
                         main.postDelayed(this, 55)
                     }
                 }
@@ -380,7 +312,7 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
                     if (touches[t.id] === t) {
                         t.consumed = true
                         listener.onFeedback()
-                        listener.onKey(k, k.hint)
+                        listener.onKey(k, k.hint, true)
                         pressed.remove(k); invalidate()
                     }
                 }
@@ -394,16 +326,9 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
         repeatRunnable?.let { main.removeCallbacks(it) }; repeatRunnable = null
     }
 
-    private fun endVoice(mode: Int) {
-        voiceActive = false
-        pressed.clear()
-        invalidate()
-        listener.onVoiceEnd(mode)
-    }
-
     /** Called when the keyboard is hidden mid-gesture. */
     fun abortGestures() {
-        if (voiceActive) endVoice(-1)
+        if (voiceActive) { voiceActive = false; listener.onVoiceRelease(true) }
         touches.clear(); pressed.clear(); cancelTimers(); invalidate()
     }
 }

@@ -47,6 +47,8 @@ android {
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.apache.commons:commons-compress:1.26.2")
+    // Handwriting (model downloaded on first use)
+    implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
     // sherpa-onnx (offline ASR: SenseVoice / Whisper), repackaged on Maven Central
     implementation("com.bihe0832.android:lib-sherpa-onnx:8.6.10") { isTransitive = false }
     implementation("com.bihe0832.android:lib-onnx:8.5.4") { isTransitive = false }

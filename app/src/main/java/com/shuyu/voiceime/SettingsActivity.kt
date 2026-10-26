@@ -159,7 +159,13 @@ class SettingsActivity : Activity() {
         button(r2, "麦克风权限") { requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1) }
         button(r2, "通讯录权限") { requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), 2) }
         button(r2, "短信权限") { requestPermissions(arrayOf(Manifest.permission.READ_SMS), 3) }
-        note(setup, "使用方法：长按空格开始说话，手指不松开往上滑到「智能整理」或「翻译」再松手，就会用对应模式输出；滑到左下角「取消」松手则放弃。")
+        val r2b = row(setup)
+        button(r2b, "验证码：允许读取通知") { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+        note(setup, "验证码填充有两种来源：读短信（需要短信权限）和读通知（推荐，需要「通知使用权」）。" +
+            "小米/红米、OPPO/一加/realme、vivo、华为/荣耀等系统自带「验证码保护」，会挡住第三方 App 读取验证码短信。" +
+            "打开「允许读取通知」后一般就能正常填充；如果仍然不行，请到系统「短信」App 的设置（或 手机管家/隐私 设置）里关闭「验证码保护 / 短信验证码安全保护」。")
+        note(setup, "使用方法：长按空格开始说话，手指不松开往上滑到「智能整理」或「翻译」再松手，就会用对应模式输出；滑到左下角「取消」松手则放弃。" +
+            "也可以点键盘顶部的话筒图标，说完后点模式卡片结束。手写首次使用需要联网下载约 20MB 的模型（需能访问 Google）。")
         field(setup, "在这里试一试", "", "点这里弹出键盘") {}
 
         // ---- ASR
@@ -286,7 +292,8 @@ class SettingsActivity : Activity() {
             append(if (current) "✅ 当前输入法" else "⬜ 不是当前输入法"); append("\n")
             append(if (ok(Manifest.permission.RECORD_AUDIO)) "✅ 麦克风" else "⬜ 麦克风（语音输入必需）"); append("    ")
             append(if (ok(Manifest.permission.READ_CONTACTS)) "✅ 通讯录" else "⬜ 通讯录"); append("    ")
-            append(if (ok(Manifest.permission.READ_SMS)) "✅ 短信" else "⬜ 短信")
+            append(if (ok(Manifest.permission.READ_SMS)) "✅ 短信" else "⬜ 短信"); append("    ")
+            append(if (com.shuyu.voiceime.data.CodeListener.enabled(this@SettingsActivity)) "✅ 通知读取" else "⬜ 通知读取")
         }
     }
 

@@ -20,6 +20,9 @@ import android.widget.Toast
 import com.shuyu.voiceime.data.Calc
 import com.shuyu.voiceime.data.Contacts
 import com.shuyu.voiceime.data.Otp
+import com.shuyu.voiceime.input.Handwriting
+import com.shuyu.voiceime.ui.HandwritingView
+import com.shuyu.voiceime.ui.VoiceOverlay
 import com.shuyu.voiceime.pinyin.Dictionary
 import com.shuyu.voiceime.pinyin.PinyinEngine
 import com.shuyu.voiceime.ui.CandidateGridPanel
@@ -52,10 +55,16 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     private lateinit var panelHost: FrameLayout
     private lateinit var topBar: TopBar
     private lateinit var keyboard: KeyboardView
+    private lateinit var handPad: HandwritingView
+    private lateinit var overlay: VoiceOverlay
     private var barHeight = 0
 
     private var chinese = true
     private var numbers = false
+    /** Chinese layout: "pinyin", "pinyin9" or "handwriting" */
+    private var cnLayout = "pinyin"
+    private var handCands: List<String> = emptyList()
+    private var lastT9Options: List<String>? = null
     private var shift = 0
     private var lastShiftTap = 0L
     private var editorInfo: EditorInfo? = null
@@ -78,6 +87,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         engine = PinyinEngine(dict)
         voice = VoiceController(this, this)
         chinese = prefs.chineseMode
+        cnLayout = prefs.sp.getString("cn_layout", "pinyin") ?: "pinyin"
         loadClipHistory()
         clipboard = getSystemService(ClipboardManager::class.java)
         clipboard?.addPrimaryClipChangedListener(clipListener)
@@ -101,8 +111,17 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         topBar = TopBar(this, this)
         keyboard = KeyboardView(this, this)
         keyboard.rowHeightPx = dp(54f) * prefs.keyboardHeightPercent / 100f
+        handPad = HandwritingView(this) { strokes -> recognizeInk(strokes) }
+        overlay = VoiceOverlay(this, { onFeedback() }) { mode -> finishVoice(mode) }
+        overlay.visibility = View.GONE
+        val keyArea = FrameLayout(this)
+        val keyCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        keyCol.addView(handPad, LinearLayout.LayoutParams(-1, (keyboard.rowHeightPx * 3).toInt()))
+        keyCol.addView(keyboard, LinearLayout.LayoutParams(-1, -2))
+        keyArea.addView(keyCol, FrameLayout.LayoutParams(-1, -2))
+        keyArea.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         page.addView(topBar, LinearLayout.LayoutParams(-1, barHeight))
-        page.addView(keyboard, LinearLayout.LayoutParams(-1, -2))
+        page.addView(keyArea, LinearLayout.LayoutParams(-1, -2))
         root.addView(page, FrameLayout.LayoutParams(-1, -2))
         panelHost = FrameLayout(this)
         panelHost.visibility = View.GONE
@@ -112,15 +131,43 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         return root
     }
 
+    private val mode get() = when {
+        numbers -> "numbers"
+        !chinese -> "english"
+        else -> cnLayout
+    }
+
     private fun applyLayout() {
         if (!::keyboard.isInitialized) return
-        keyboard.layout = if (numbers) Layouts.numbers() else Layouts.qwerty(chinese)
+        engine.t9 = mode == "pinyin9"
+        lastT9Options = null
+        val hand = mode == "handwriting"
+        handPad.visibility = if (hand) View.VISIBLE else View.GONE
+        handPad.layoutParams.height = (keyboard.rowHeightPx * 3).toInt()
+        handPad.clear(); handCands = emptyList()
+        keyboard.layout = when (mode) {
+            "numbers" -> Layouts.numbers()
+            "english" -> Layouts.qwerty(false)
+            "pinyin9" -> Layouts.t9(emptyList())
+            "handwriting" -> Layouts.handwritingBar()
+            else -> Layouts.qwerty(true)
+        }
         keyboard.shiftState = shift
         updateVoiceLabels()
+        if (hand) Handwriting.prepare { err -> if (err != null) Toast.makeText(this, err, Toast.LENGTH_LONG).show() }
+    }
+
+    /** 9-key: the left column shows spellings of the first syllable while composing. */
+    private fun refreshT9Column() {
+        if (mode != "pinyin9") return
+        val opts = if (engine.isComposing) engine.t9FirstOptions() else emptyList()
+        if (opts == lastT9Options) return
+        lastT9Options = opts
+        keyboard.layout = Layouts.t9(opts)
     }
 
     private fun updateVoiceLabels() {
-        keyboard.voiceModeLabels = arrayOf(
+        overlay.labels = arrayOf(
             "语音输入" to (if (prefs.asrEngine == "offline") "离线 · 直接转文字" else "直接转文字"),
             "智能整理" to "去口水词 · 更有条理",
             "翻译" to "说中文 → ${prefs.targetLanguage}")
@@ -156,6 +203,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         if (::keyboard.isInitialized) keyboard.abortGestures()
+        if (::overlay.isInitialized) overlay.hide()
         if (voice.isRecording) voice.cancel()
         engine.reset()
         dict.flush()
@@ -183,12 +231,22 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
 
     override fun feedback() = onFeedback()
 
-    override fun onKey(key: Key, output: String) {
+    override fun onKey(key: Key, output: String, alt: Boolean) {
         when (key.type) {
             KeyType.TEXT -> typeText(output)
+            KeyType.T9 -> {
+                if (alt) { if (engine.isComposing) finishComposing(raw = false); commit(output) }
+                else if (output == "1" && !engine.isComposing) commit(if (chinese) "，" else ",")
+                else { engine.input(output[0]); showComposing() }
+            }
+            KeyType.CLEAR -> { if (engine.isComposing) { engine.reset(); topBar.showToolbar(); refreshT9Column() } }
+            KeyType.PICK -> {
+                engine.pickT9First(if (engine.t9First == output) null else output)
+                showComposing()
+            }
             KeyType.BACKSPACE -> backspace()
             KeyType.SPACE -> {
-                if (engine.isComposing) onCandidate(0) else commit(" ")
+                if (engine.isComposing || handCands.isNotEmpty()) onCandidate(0) else commit(" ")
             }
             KeyType.ENTER -> enter()
             KeyType.SHIFT -> {
@@ -206,6 +264,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
                 finishComposing(raw = true)
                 chinese = !chinese
                 prefs.chineseMode = chinese
+                numbers = false
                 applyLayout()
             }
             KeyType.NUM_PAD -> { finishComposing(raw = false); numbers = true; applyLayout() }
@@ -242,9 +301,10 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     override fun backspace() {
         if (engine.isComposing) {
             engine.backspace()
-            if (engine.isComposing) showComposing() else topBar.showToolbar()
+            if (engine.isComposing) showComposing() else { topBar.showToolbar(); refreshT9Column() }
             return
         }
+        if (::handPad.isInitialized && !handPad.isEmpty) { handPad.clear(); handCands = emptyList(); topBar.showToolbar(); return }
         if (smart != Smart.NONE && smart != Smart.CALC) clearSmart()
         val ic = currentInputConnection ?: return
         val sel = ic.getSelectedText(0)
@@ -292,23 +352,32 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     // ================================================================ candidates
 
     private fun showComposing() {
+        refreshT9Column()
+        if (!engine.isComposing) { topBar.showToolbar(); return }
         val (text, caret) = engine.displayText()
         topBar.showCandidates(text, caret, engine.candidates.take(60).map { it.text })
         smart = Smart.NONE
     }
 
     override fun onCandidate(index: Int) {
+        if (handCands.isNotEmpty()) {
+            val w = handCands.getOrNull(index) ?: return
+            handCands = emptyList(); handPad.clear()
+            commit(w); topBar.showToolbar(); afterWordCommitted(w)
+            return
+        }
         val done = engine.select(index)
         if (done != null) {
             commit(done)
             topBar.showToolbar()
             afterWordCommitted(done)
+            refreshT9Column()
         } else showComposing()
     }
 
     override fun onExpandCandidates() {
-        if (!engine.isComposing) return
-        val cands = engine.candidates.map { it.text }
+        if (!engine.isComposing && handCands.isEmpty()) return
+        val cands = if (handCands.isNotEmpty()) handCands else engine.candidates.map { it.text }
         showPanelView(CandidateGridPanel(this, this, cands) { i -> closePanel(); onCandidate(i) })
     }
 
@@ -387,7 +456,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     private fun checkOtp() {
         if (!prefs.otpEnabled) return
         Core.bg.execute {
-            val fromSms = Otp.latestFromSms(this)
+            val fromSms = Otp.latestFromNotification() ?: Otp.latestFromSms(this)
             val fromClip = clipHistory.firstOrNull()?.let { Otp.extract(it) }
             val code = fromSms ?: fromClip ?: return@execute
             main.post {
@@ -397,7 +466,13 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         }
     }
 
+    private fun showOtp(code: String) {
+        if (code == usedOtp || engine.isComposing) return
+        showSmart(Smart.OTP, listOf(TopBar.Suggestion(code, "验证码", highlight = true) to { commit(code); usedOtp = code }))
+    }
+
     private fun watchSms() {
+        Otp.onNew = { code -> if (isInputViewShown && prefs.otpEnabled) showOtp(code) }
         if (smsObserver != null || !prefs.otpEnabled || !Otp.granted(this)) return
         smsObserver = object : ContentObserver(main) {
             override fun onChange(selfChange: Boolean) { if (isInputViewShown) checkOtp() }
@@ -407,23 +482,46 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
 
     // ================================================================ voice
 
-    override fun onVoiceStart(): Boolean {
+    private fun voiceAllowed(): Boolean {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             Toast.makeText(this, "请先在「声键输入法」设置里授予麦克风权限", Toast.LENGTH_LONG).show()
             openSettings()
             return false
         }
+        return true
+    }
+
+    /** Long-press on space. */
+    override fun onVoiceStart(): Boolean {
+        if (!voiceAllowed()) return false
         finishComposing(raw = false)
         clearSmart()
         updateVoiceLabels()
-        return voice.start()
+        if (!voice.start()) return false
+        overlay.show(tap = false)
+        return true
     }
 
-    override fun onVoiceEnd(mode: Int) {
+    override fun onVoiceTrack(rawX: Float, rawY: Float) = overlay.track(rawX, rawY)
+
+    override fun onVoiceRelease(cancelled: Boolean) = finishVoice(if (cancelled) -1 else overlay.selection)
+
+    /** Toolbar mic: tap to start, then tap a mode card to finish. */
+    private fun startTapVoice() {
+        if (overlay.isShowing) { finishVoice(overlay.selection); return }
+        if (!voiceAllowed()) return
+        finishComposing(raw = false)
+        clearSmart()
+        updateVoiceLabels()
+        if (voice.start()) overlay.show(tap = true)
+    }
+
+    private fun finishVoice(mode: Int) {
+        overlay.hide()
         if (mode < 0) voice.cancel() else voice.finish(VoiceController.Mode.values()[mode])
     }
 
-    override fun onLevel(level: Float) { if (::keyboard.isInitialized) keyboard.setVoiceLevel(level) }
+    override fun onLevel(level: Float) { if (::overlay.isInitialized) overlay.setLevel(level) }
 
     override fun onStatus(text: String?) { topBar.setStatus(text) }
 
@@ -433,6 +531,19 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
 
     override fun onCancelStatus() { voice.cancel() }
 
+    // ================================================================ handwriting
+
+    private fun recognizeInk(strokes: List<List<FloatArray>>) {
+        if (!Handwriting.ready) {
+            Handwriting.prepare { err -> if (err != null) Toast.makeText(this, err, Toast.LENGTH_SHORT).show() else recognizeInk(strokes) }
+            return
+        }
+        Handwriting.recognize(strokes, { list ->
+            handCands = list.filter { it.isNotBlank() }.take(30)
+            if (handCands.isNotEmpty()) topBar.showCandidates("", -1, handCands)
+        }, { msg -> Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() })
+    }
+
     // ================================================================ toolbar & panels
 
     override fun onToolbar(action: String) {
@@ -440,6 +551,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         when (action) {
             "settings" -> openSettings()
             "hide" -> requestHideSelf(0)
+            "voice" -> startTapVoice()
             else -> showPanel(action)
         }
     }
@@ -475,14 +587,18 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         page.visibility = View.VISIBLE
     }
 
-    override val currentMode: String get() = if (chinese) "pinyin" else "english"
+    override val currentMode: String get() = if (chinese) cnLayout else "english"
 
     override fun selectMode(mode: String) {
         when (mode) {
-            "pinyin" -> { chinese = true; numbers = false; prefs.chineseMode = true }
+            "pinyin", "pinyin9", "handwriting" -> {
+                chinese = true; numbers = false; prefs.chineseMode = true
+                cnLayout = mode; prefs.sp.edit().putString("cn_layout", mode).apply()
+            }
             "english" -> { chinese = false; numbers = false; prefs.chineseMode = false }
-            else -> { Toast.makeText(this, "初版暂未支持，后续版本加入", Toast.LENGTH_SHORT).show(); return }
+            else -> { Toast.makeText(this, "暂未支持，后续版本加入", Toast.LENGTH_SHORT).show(); return }
         }
+        engine.reset()
         applyLayout()
         closePanel()
     }

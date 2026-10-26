@@ -48,6 +48,38 @@ object Syllables {
         return s
     }
 
+    // ---------------------------------------------------------------- 9-key (T9)
+
+    private const val T9_LETTERS = "22233344455566677778889999"
+    fun digitOf(c: Char): Char = if (c in 'a'..'z') T9_LETTERS[c - 'a'] else c
+    fun digits(s: String): String = String(CharArray(s.length) { digitOf(s[it]) })
+
+    /** digit code -> syllables with that code (e.g. "64" -> ni, mi, oh is not a syllable) */
+    val T9_FULL: Map<String, List<String>> = FULL.groupBy { digits(it) }
+    private val T9_PREFIX: Map<String, List<String>> = PREFIX.groupBy { digits(it) }
+
+    /** Valid spellings (full syllables first, then prefixes) for a digit token. */
+    fun t9Spellings(code: String): List<String> =
+        ((T9_FULL[code] ?: emptyList()) + (T9_PREFIX[code] ?: emptyList()).filter { it !in FULL }).distinct()
+
+    /** Splits a digit string into syllable-sized digit tokens; '1' is an explicit separator. */
+    fun segmentT9(input: String): List<Token> {
+        val out = ArrayList<Token>()
+        var sep = StringBuilder()
+        var i = 0
+        while (i < input.length) {
+            if (input[i] == '1') { sep.append('1'); i++; continue }
+            var j = i
+            while (j < input.length && input[j] != '1') j++
+            val seg = segmentBy(input.substring(i, j), { it in T9_FULL }, { it in T9_PREFIX })
+            for ((k, t) in seg.withIndex()) out.add(if (k == 0) t.copy(raw = sep.toString() + t.raw) else t)
+            sep = StringBuilder()
+            i = j
+        }
+        if (sep.isNotEmpty() && out.isNotEmpty()) { val l = out.removeAt(out.size - 1); out.add(l.copy(raw = l.raw + sep)) }
+        return out
+    }
+
     data class Token(val text: String, val complete: Boolean, val raw: String)
 
     /**
@@ -74,7 +106,9 @@ object Syllables {
 
     private class Best(val tokens: List<Token>, val partial: Int)
 
-    private fun segmentChunk(s: String): List<Token> {
+    private fun segmentChunk(s: String): List<Token> = segmentBy(s, { it in FULL }, { it in PREFIX })
+
+    private fun segmentBy(s: String, isFull: (String) -> Boolean, isPrefix: (String) -> Boolean): List<Token> {
         val n = s.length
         val memo = arrayOfNulls<Best>(n + 1)
         memo[n] = Best(emptyList(), 0)
@@ -82,8 +116,8 @@ object Syllables {
             var best: Best? = null
             for (len in minOf(6, n - i) downTo 1) {
                 val piece = s.substring(i, i + len)
-                val complete = piece in FULL
-                val partial = !complete && piece in PREFIX
+                val complete = isFull(piece)
+                val partial = !complete && isPrefix(piece)
                 if (!complete && !partial && len > 1) continue
                 val rest = memo[i + len] ?: continue
                 val p = rest.partial + if (complete) 0 else 1

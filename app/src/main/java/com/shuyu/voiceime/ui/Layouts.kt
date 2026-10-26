@@ -1,7 +1,10 @@
 package com.shuyu.voiceime.ui
 
 /** What a key does. Text keys output [Key.text]; the rest are actions handled by the service. */
-enum class KeyType { TEXT, SHIFT, BACKSPACE, ENTER, SPACE, NUM_PAD, LANG, SYMBOLS, BACK }
+enum class KeyType { TEXT, SHIFT, BACKSPACE, ENTER, SPACE, NUM_PAD, LANG, SYMBOLS, BACK,
+    /** 9-key digit; [Key.text] is the digit, swipe-up commits the digit itself */ T9,
+    /** 9-key: clear composing (重输) */ CLEAR,
+    /** 9-key left column: pick a spelling for the first syllable */ PICK }
 
 class Key(
     val type: KeyType,
@@ -53,4 +56,30 @@ object Layouts {
         val left = listOf("@", ":", "+", "-", "*", "/", "=", "%", "(", ")", ",").map { Key(KeyType.TEXT, it) }
         return KbLayout("numbers", rows, left)
     }
+
+    /** Pinyin 9-key. The left column shows punctuation, or spellings of the first syllable while composing. */
+    fun t9(spellings: List<String>): KbLayout {
+        fun d(digit: String, letters: String) = Key(KeyType.T9, letters, digit, hint = digit)
+        val rows = listOf(
+            listOf(Key(KeyType.T9, "分词", "1", hint = "1"), d("2", "ABC"), d("3", "DEF"), Key(KeyType.BACKSPACE, icon = Icon.BACKSPACE)),
+            listOf(d("4", "GHI"), d("5", "JKL"), d("6", "MNO"), Key(KeyType.CLEAR, "重输", small = true)),
+            listOf(d("7", "PQRS"), d("8", "TUV"), d("9", "WXYZ"), Key(KeyType.ENTER, icon = Icon.ENTER)),
+            listOf(Key(KeyType.SYMBOLS, "符号", small = true), Key(KeyType.NUM_PAD, "123", small = true),
+                Key(KeyType.SPACE, icon = Icon.SPACE_MIC), Key(KeyType.LANG, "中", hint = "En")),
+        )
+        val left = if (spellings.isEmpty()) listOf("，", "。", "？", "！", "、", "～", "…", "：", "；", "@").map { Key(KeyType.TEXT, it) }
+            else spellings.map { Key(KeyType.PICK, it) }
+        return KbLayout("pinyin9", rows, left)
+    }
+
+    /** Bottom row under the handwriting pad. */
+    fun handwritingBar(): KbLayout = KbLayout("handwriting", listOf(listOf(
+        Key(KeyType.NUM_PAD, "123", weight = 1.1f),
+        Key(KeyType.TEXT, "，", "，", hint = "！"),
+        Key(KeyType.SPACE, icon = Icon.SPACE_MIC, weight = 2.6f),
+        Key(KeyType.TEXT, "。", "。", hint = "？"),
+        Key(KeyType.SYMBOLS, "符", hintIcon = Icon.SMILE),
+        Key(KeyType.BACKSPACE, icon = Icon.BACKSPACE, weight = 1.2f),
+        Key(KeyType.ENTER, icon = Icon.ENTER, weight = 1.3f),
+    )))
 }

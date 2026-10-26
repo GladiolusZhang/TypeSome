@@ -43,6 +43,19 @@ object Otp {
 
     fun granted(ctx: Context) = ctx.checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
 
+    /** Latest code seen in a notification, with the time it arrived. */
+    @Volatile var notified: Pair<String, Long>? = null; private set
+    /** Called on the main thread when a new code arrives from a notification. */
+    @Volatile var onNew: ((String) -> Unit)? = null
+
+    fun offer(code: String) {
+        notified = code to System.currentTimeMillis()
+        android.os.Handler(android.os.Looper.getMainLooper()).post { onNew?.invoke(code) }
+    }
+
+    fun latestFromNotification(maxAgeMs: Long = 5 * 60_000): String? =
+        notified?.takeIf { System.currentTimeMillis() - it.second < maxAgeMs }?.first
+
     fun extract(text: String): String? {
         if (!KEYWORDS.containsMatchIn(text)) return null
         val kw = KEYWORDS.find(text)!!.range.first

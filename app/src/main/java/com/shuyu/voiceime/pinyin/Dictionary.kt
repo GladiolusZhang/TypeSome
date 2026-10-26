@@ -20,6 +20,8 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
     private val entries = ArrayList<Entry>(130_000)
     /** Signature = first letter of each syllable, with fuzzy-merged letters (l->n). */
     private val bySig = HashMap<String, MutableList<Entry>>()
+    /** Same entries keyed by the 9-key digit of each syllable's first letter. */
+    private val byDigitSig = HashMap<String, MutableList<Entry>>()
     /** Word -> frequency, used for association (联想) and char -> reading lookup. */
     private val sortedWords = ArrayList<String>()
     private val wordFreq = HashMap<String, Int>()
@@ -52,6 +54,7 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
                 val e = Entry(key, key.split('\'').toTypedArray(), words, freqs)
                 entries.add(e)
                 bySig.getOrPut(sig(e.syllables)) { ArrayList(4) }.add(e)
+                byDigitSig.getOrPut(digitSig(e.syllables)) { ArrayList(4) }.add(e)
                 for (i in words.indices) {
                     val w = words[i]
                     val old = wordFreq[w]
@@ -92,6 +95,29 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
                 val boost = if (u.source == SRC_CONTACT) 2_000_000L else 300_000L
                 out.add(Hit(u.word, boost + u.count * 200_000L, tokens.size, true))
             }
+        }
+        return out
+    }
+
+    /** 9-key lookup: tokens hold digits. [first] optionally pins the first syllable's spelling. */
+    fun lookupT9(tokens: List<Syllables.Token>, first: String?): List<Hit> {
+        if (tokens.isEmpty()) return emptyList()
+        val s = String(CharArray(tokens.size) { tokens[it].text[0] })
+        val out = ArrayList<Hit>()
+        fun ok(syl: Array<String>): Boolean {
+            if (syl.size != tokens.size) return false
+            if (first != null && syl[0] != first && !(first !in Syllables.FULL && syl[0].startsWith(first))) return false
+            for (i in tokens.indices) {
+                val d = Syllables.digits(syl[i])
+                if (tokens[i].complete) { if (d != tokens[i].text) return false } else if (!d.startsWith(tokens[i].text)) return false
+            }
+            return true
+        }
+        byDigitSig[s]?.forEach { e -> if (ok(e.syllables)) for (i in e.words.indices) out.add(Hit(e.words[i], e.freqs[i].toLong(), tokens.size, false)) }
+        for (u in userWords.values) {
+            if (u.key.isEmpty()) continue
+            val syl = u.key.split('\'').toTypedArray()
+            if (ok(syl)) out.add(Hit(u.word, (if (u.source == SRC_CONTACT) 2_000_000L else 300_000L) + u.count * 200_000L, tokens.size, true))
         }
         return out
     }
@@ -245,6 +271,7 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
             val c = s[0]
             return if (c == 'l') 'n' else c
         }
+        fun digitSig(syl: Array<String>): String = String(CharArray(syl.size) { Syllables.digitOf(syl[it][0]) })
         fun sig(syl: Array<String>): String = String(CharArray(syl.size) { firstLetter(syl[it]) })
         fun sigOf(tokens: List<Syllables.Token>): String = String(CharArray(tokens.size) { firstLetter(tokens[it].text) })
 

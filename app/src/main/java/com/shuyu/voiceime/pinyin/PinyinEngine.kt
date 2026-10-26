@@ -18,6 +18,20 @@ class PinyinEngine(private val dict: Dictionary) {
     var fuzzy = false
     var autoCorrect = true
     var learning = true
+    /** 9-key mode: raw holds digits 2-9 (and 1 as separator). */
+    var t9 = false
+        set(v) { field = v; reset() }
+    /** 9-key: spelling the user picked for the first syllable (left column), or null. */
+    var t9First: String? = null
+        private set
+
+    fun pickT9First(spelling: String?) { t9First = spelling; refresh() }
+
+    private fun lookup(sub: List<Syllables.Token>, start: Int): List<Dictionary.Hit> =
+        if (t9) dict.lookupT9(sub, if (start == 0) t9First else null) else dict.lookup(sub, fuzzy)
+
+    /** 9-key: possible spellings of the first syllable, for the left column. */
+    fun t9FirstOptions(): List<String> = tokens.firstOrNull()?.let { Syllables.t9Spellings(it.text) } ?: emptyList()
 
     var tokens: List<Syllables.Token> = emptyList(); private set
     var candidates: List<Candidate> = emptyList(); private set
@@ -25,7 +39,7 @@ class PinyinEngine(private val dict: Dictionary) {
     val isComposing get() = raw.isNotEmpty() || picked.isNotEmpty()
 
     fun reset() {
-        raw.clear(); cursor = 0; picked.clear(); tokens = emptyList(); candidates = emptyList()
+        raw.clear(); cursor = 0; picked.clear(); tokens = emptyList(); candidates = emptyList(); t9First = null
     }
 
     fun input(c: Char) {
@@ -55,6 +69,7 @@ class PinyinEngine(private val dict: Dictionary) {
 
     /** Text shown in the composing strip: picked words + segmented pinyin, with a caret marker. */
     fun displayText(): Pair<String, Int> {
+        if (t9) { val t = t9Display(); return t to t.length }
         val sb = StringBuilder()
         picked.forEach { sb.append(it.word) }
         var caret = -1
@@ -70,6 +85,26 @@ class PinyinEngine(private val dict: Dictionary) {
         }
         if (caret < 0) caret = sb.length
         return sb.toString() to caret
+    }
+
+    /** 9-key: spell the digits using the best candidate's pinyin where possible. */
+    private fun t9Display(): String {
+        val sb = StringBuilder()
+        picked.forEach { sb.append(it.word) }
+        val top = candidates.firstOrNull()
+        val spelled = top?.let { if (it.tokenCount > 0) dict.pinyinOf(it.text)?.split('\'') else null }
+            ?.takeIf { it.size == top.tokenCount } ?: emptyList()
+        for ((i, t) in tokens.withIndex()) {
+            if (i > 0) sb.append('\'')
+            val full = spelled.getOrNull(i)
+            val sp = when {
+                i == 0 && t9First != null -> t9First!!
+                full != null -> if (t.complete) full else full.take(t.text.length)
+                else -> Syllables.t9Spellings(t.text).firstOrNull() ?: t.text
+            }
+            sb.append(sp)
+        }
+        return sb.toString()
     }
 
     /** Maps a position in [displayText] back to a raw cursor index. */
@@ -95,7 +130,8 @@ class PinyinEngine(private val dict: Dictionary) {
         val c = candidates.getOrNull(index) ?: return null
         if (c.tokenCount <= 0 || c.tokenCount >= tokens.size) {
             val full = picked.joinToString("") { it.word } + c.text
-            val key = (picked.map { it.key } + listOf(keyOf(tokens.take(maxOf(c.tokenCount, tokens.size))))).filter { it.isNotEmpty() }.joinToString("'")
+            val key = if (t9) dict.pinyinOf(full) ?: ""
+                else (picked.map { it.key } + listOf(keyOf(tokens.take(maxOf(c.tokenCount, tokens.size))))).filter { it.isNotEmpty() }.joinToString("'")
             learnSelection(full, key, c)
             reset()
             return full
@@ -105,14 +141,16 @@ class PinyinEngine(private val dict: Dictionary) {
         picked.add(Pick(c.text, usedRaw, keyOf(used)))
         raw.delete(0, usedRaw.length)
         cursor = (cursor - usedRaw.length).coerceAtLeast(0)
-        if (raw.startsWith("'")) { raw.deleteCharAt(0); cursor = (cursor - 1).coerceAtLeast(0) }
+        while (raw.startsWith("'") || (t9 && raw.startsWith("1"))) { raw.deleteCharAt(0); cursor = (cursor - 1).coerceAtLeast(0) }
+        t9First = null
         refresh()
         return null
     }
 
     /** Commits the raw letters as-is (Enter key). */
     fun commitRaw(): String {
-        val s = picked.joinToString("") { it.word } + raw.toString().replace("'", "")
+        val s = if (t9) t9Display().filter { it != '\'' }
+            else picked.joinToString("") { it.word } + raw.toString().replace("'", "")
         reset()
         return s
     }
@@ -135,9 +173,15 @@ class PinyinEngine(private val dict: Dictionary) {
             candidates = if (picked.isNotEmpty()) listOf(Candidate(picked.joinToString("") { it.word }, 0)) else emptyList()
             return
         }
+        if (t9) {
+            tokens = Syllables.segmentT9(raw.toString())
+            candidates = if (tokens.isEmpty()) listOf(Candidate(raw.toString(), 0)) else buildCandidates()
+            return
+        }
         var text = raw.toString().lowercase()
         if (autoCorrect) text = Syllables.autoCorrect(text)
         tokens = Syllables.segment(text)
+        if (tokens.isEmpty()) { candidates = listOf(Candidate(raw.toString(), 0)); return }
         if (autoCorrect && text != raw.toString().lowercase()) {
             // keep raw spans aligned with what the user actually typed
             tokens = realign(tokens, raw.toString())
@@ -164,7 +208,7 @@ class PinyinEngine(private val dict: Dictionary) {
 
         val levels = ArrayList<List<Dictionary.Hit>>()
         for (k in n downTo 1) {
-            val hits = dict.lookup(tokens.subList(0, k), fuzzy).sortedByDescending { it.score }
+            val hits = lookup(tokens.subList(0, k), 0).sortedByDescending { it.score }
             levels.add(hits)
         }
         val fullHits = levels[0]
@@ -195,7 +239,7 @@ class PinyinEngine(private val dict: Dictionary) {
         for (i in 1..n) {
             for (k in 1..minOf(i, 6)) {
                 if (best[i - k] == Double.NEGATIVE_INFINITY) continue
-                val hit = dict.lookup(tokens.subList(i - k, i), fuzzy).maxByOrNull { it.score }
+                val hit = lookup(tokens.subList(i - k, i), i - k).maxByOrNull { it.score }
                 val (w, score) = if (hit != null) hit.word to (Math.log(hit.score + 1.0) - logTotal)
                     else if (k == 1) tokens[i - 1].text to -40.0 else continue
                 val v = best[i - k] + score
