@@ -95,7 +95,12 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
 
     // ================================================================ tap outside to hide
 
-    private val hideFromOutside = Runnable { if (isInputViewShown && !voice.isRecording) requestHideSelf(0) }
+    private var outsideDownAt = 0L
+    private val hideFromOutside = Runnable {
+        // the editor changed right after the tap (a send button cleared it, …): that tap was meant for the app
+        if (isInputViewShown && !voice.isRecording && lastEditorChange < outsideDownAt) requestHideSelf(0)
+    }
+    private var lastEditorChange = 0L
 
     /**
      * Touches outside the keyboard arrive as ACTION_OUTSIDE (no coordinates). Hide shortly after, unless the
@@ -108,7 +113,8 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         w.callback = object : android.view.Window.Callback by cb {
             override fun dispatchTouchEvent(e: android.view.MotionEvent): Boolean {
                 if (e.actionMasked == android.view.MotionEvent.ACTION_OUTSIDE) {
-                    if (prefs.hideOnOutsideTap) { main.removeCallbacks(hideFromOutside); main.postDelayed(hideFromOutside, 280) }
+                    outsideDownAt = SystemClock.uptimeMillis()
+                    if (prefs.hideOnOutsideTap) { main.removeCallbacks(hideFromOutside); main.postDelayed(hideFromOutside, OUTSIDE_HIDE_DELAY) }
                     return true
                 }
                 return cb.dispatchTouchEvent(e)
@@ -116,7 +122,10 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         }
     }
 
-    private fun keepShown() = main.removeCallbacks(hideFromOutside)
+    private fun keepShown() {
+        lastEditorChange = SystemClock.uptimeMillis()
+        main.removeCallbacks(hideFromOutside)
+    }
 
     override fun onShowInputRequested(flags: Int, configChange: Boolean): Boolean {
         keepShown()
@@ -764,5 +773,12 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         prefs.sp.edit().putString(key, list.take(limit).joinToString("\u0001")).apply()
     }
 
-    private companion object { const val EMOJI_HISTORY = 24 }
+    private companion object {
+        const val EMOJI_HISTORY = 24
+        /**
+         * Outside touches only report the finger going down. Wait long enough for a normal tap to finish, so a
+         * button there (e.g. 发送) gets its click before the app re-lays out under a closing keyboard.
+         */
+        const val OUTSIDE_HIDE_DELAY = 650L
+    }
 }
