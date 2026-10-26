@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds app/src/main/assets/pinyin_dict.txt from the rime-ice dictionaries.
+"""Builds app/src/main/assets/pinyin_dict.txt from the rime-ice dictionaries, and en_words.txt.
 
 rime-ice (https://github.com/iDvel/rime-ice, GPL-3.0) is downloaded at build time and not stored
 in this repository. Output format, one line per pinyin key:
@@ -52,8 +52,54 @@ def main(out, cache):
             f.write(key + "\t" + " ".join(f"{w},{c}" for w, c in items) + "\n")
     print(f"wrote {len(table)} keys to {out}")
 
+EN_URL = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/en/en_50k.txt"
+EN_WORDS = int(os.environ.get("EN_WORDS", "40000"))
+
+# The subtitle word list splits contractions (didn + t); put them back together.
+# (contraction, word whose count it borrows, share of that count)
+CONTRACTIONS = [
+    ("don't", "don", 0.9), ("didn't", "didn", 1), ("doesn't", "doesn", 1), ("isn't", "isn", 1),
+    ("wasn't", "wasn", 1), ("aren't", "aren", 1), ("weren't", "weren", 1), ("hasn't", "hasn", 1),
+    ("haven't", "haven", 0.9), ("couldn't", "couldn", 1), ("wouldn't", "wouldn", 1), ("shouldn't", "shouldn", 1),
+    ("can't", "can", 0.25), ("won't", "won", 0.8), ("ain't", "ain", 1),
+    ("i'm", "i", 0.15), ("i'll", "i", 0.05), ("i've", "i", 0.04), ("i'd", "i", 0.03),
+    ("it's", "it", 0.15), ("that's", "that", 0.2), ("what's", "what", 0.15), ("there's", "there", 0.15),
+    ("let's", "let", 0.6), ("he's", "he", 0.1), ("she's", "she", 0.1), ("who's", "who", 0.1),
+    ("you're", "you", 0.06), ("we're", "we", 0.1), ("they're", "they", 0.1),
+    ("you'll", "you", 0.02), ("we'll", "we", 0.05), ("they'll", "they", 0.03), ("it'll", "it", 0.02),
+    ("you've", "you", 0.02), ("we've", "we", 0.04), ("they've", "they", 0.03), ("you'd", "you", 0.015),
+]
+FRAGMENTS = {"didn", "doesn", "isn", "wasn", "aren", "weren", "hasn", "couldn", "wouldn", "shouldn", "ain",
+             "re", "ll", "ve", "dont", "im", "didnt", "cant", "doesnt", "isnt", "wasnt", "wont", "youre",
+             "thats", "whats", "ive", "theyre", "lets", "arent", "couldnt", "wouldnt", "shouldnt", "havent"}
+
+def english(out, cache):
+    """English words by frequency (hermitdave/FrequencyWords, CC BY-SA 4.0, from OpenSubtitles):
+    one "word count" per line, best first."""
+    path = os.path.join(cache, "en_50k.txt")
+    if not os.path.exists(path):
+        urllib.request.urlretrieve(EN_URL, path)
+    ok = re.compile(r"^[a-z]+$")
+    counts = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            p = line.split()
+            if len(p) != 2 or not ok.match(p[0]): continue
+            # single letters other than a and i are noise in subtitles
+            if len(p[0]) == 1 and p[0] not in ("a", "i"): continue
+            counts[p[0]] = int(p[1])
+    for word, base, share in CONTRACTIONS:
+        if base in counts: counts[word] = int(counts[base] * share)
+    for w in FRAGMENTS: counts.pop(w, None)
+    counts.pop("don", None)
+    best = sorted(counts.items(), key=lambda x: -x[1])[:EN_WORDS]
+    with open(out, "w", encoding="utf-8") as o:
+        for w, c in best: o.write(f"{w} {c}\n")
+    print(f"wrote {len(best)} English words to {out}")
+
 if __name__ == "__main__":
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(root, "app/src/main/assets/pinyin_dict.txt")
     cache = sys.argv[2] if len(sys.argv) > 2 else os.path.join(root, "build/dict-cache")
     main(out, cache)
+    english(os.path.join(os.path.dirname(out), "en_words.txt"), cache)

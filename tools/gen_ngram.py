@@ -7,7 +7,8 @@ Sources (downloaded, never stored in this repository), each normalized to the sa
   - LCCC (thu-coai, MIT): cleaned Weibo conversations
 Only words present in the pinyin dictionary are kept. Output, one line per first word:
     今天<TAB>total<TAB>的,1365 是,115 ...
-Usage: gen_ngram.py pinyin_dict.txt out.txt [cache_dir]
+English next words come from the English OpenSubtitles text in the same way (en_bigram.txt).
+Usage: gen_ngram.py pinyin_dict.txt zh_out.txt en_words.txt en_out.txt [cache_dir]
 """
 import collections, gzip, io, json, math, os, re, sys, tarfile, urllib.request
 
@@ -127,30 +128,82 @@ def strings(x):
         for y in x.values(): yield from strings(y)
 
 def lccc(cache, words, seg):
+    """LCCC-base is published through a loading script; find its data URL there."""
+    base = "https://huggingface.co/datasets/thu-coai/lccc/resolve/main/"
     try:
-        with open_url("https://huggingface.co/api/datasets/thu-coai/lccc") as r:
-            files = [s["rfilename"] for s in json.load(r).get("siblings", [])]
+        with open_url(base + "lccc.py") as r:
+            script = r.read().decode("utf-8", "ignore")
     except Exception as e:
-        log("  lccc listing unavailable:", e); return collections.Counter()
-    log("  lccc files:", files)
-    pick = [f for f in files if "base" in f and "train" in f] or [f for f in files if "train" in f]
+        log("  lccc script unavailable:", e); return collections.Counter()
+    urls = re.findall(r"https?://[^\s\"']+", script)
+    log("  lccc urls:", urls)
+    pick = [u for u in urls if "base" in u and ("train" in u or u.endswith((".zip", ".gz", ".json", ".jsonl")))]
     if not pick: return collections.Counter()
-    url = "https://huggingface.co/datasets/thu-coai/lccc/resolve/main/" + pick[0]
     try:
-        path = fetch(url, cache)
+        path = fetch(pick[0], cache)
     except Exception as e:
         log("  lccc download failed:", e); return collections.Counter()
-    raw = gzip.open(path, "rt", encoding="utf-8") if path.endswith(".gz") else open(path, encoding="utf-8")
-    def lines():
-        with raw:
-            if path.endswith(".json") or path.endswith(".json.gz"):
-                for s in strings(json.load(raw)): yield s.replace(" ", "")
+    def texts():
+        def from_stream(f, name):
+            if name.endswith(".gz"): f = gzip.GzipFile(fileobj=f)
+            t = io.TextIOWrapper(f, encoding="utf-8", errors="ignore")
+            if name.endswith(".json") or name.endswith(".json.gz"):
+                for s in strings(json.load(t)): yield s.replace(" ", "")
             else:
-                for line in raw:
+                for line in t:
                     try: obj = json.loads(line)
                     except Exception: yield line.replace(" ", ""); continue
                     for s in strings(obj): yield s.replace(" ", "")
-    return count_text(lines(), seg, words, LINES)
+        if path.endswith(".zip"):
+            import zipfile
+            with zipfile.ZipFile(path) as z:
+                for name in z.namelist():
+                    log("  lccc member", name)
+                    if "train" in name or len(z.namelist()) == 1:
+                        with z.open(name) as f: yield from from_stream(f, name)
+        else:
+            with open(path, "rb") as f: yield from from_stream(f, path)
+    return count_text(texts(), seg, words, LINES)
+
+EN_TOKEN = re.compile(r"[a-z]+(?:'[a-z]+)?")
+EN_GLUE = re.compile(r"\s+(n't|'(?:s|re|m|ll|ve|d)\b)")
+
+def english(words_path, out, cache):
+    rank = {}
+    with open(words_path, encoding="utf-8") as f:
+        for line in f: rank[line.split()[0]] = len(rank)
+    big = collections.Counter()
+    for url in ["https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2018/mono/en.txt.gz"]:
+        try:
+            r = open_url(url)
+        except Exception as e:
+            log("  unavailable:", url, e); continue
+        log("stream", url)
+        with r:
+            lines = io.TextIOWrapper(gzip.GzipFile(fileobj=r), encoding="utf-8", errors="ignore")
+            n = 0
+            for line in lines:
+                # sentence-internal pairs only; commas and the like also break a pair
+                for part in re.split(r"[,.;:!?\"()\[\]-]+", EN_GLUE.sub(r"\1", line.lower().replace("’", "'"))):
+                    toks = EN_TOKEN.findall(part)
+                    for a, b in zip(toks, toks[1:]):
+                        if a in rank and b in rank: big[(a, b)] += 1
+                n += 1
+                if n % 1000000 == 0: log(f"  {n} lines, {len(big)} pairs")
+                if n >= LINES: break
+        break
+    by_first = collections.defaultdict(list)
+    for (a, b), c in big.items(): by_first[a].append((b, c))
+    pairs = 0
+    with open(out, "w", encoding="utf-8") as f:
+        for a in sorted(by_first, key=lambda w: rank[w]):
+            if rank[a] >= 20000: continue
+            items = by_first[a]
+            keep = sorted((x for x in items if x[1] >= MIN), key=lambda x: -x[1])[:16]
+            if not keep: continue
+            pairs += len(keep)
+            f.write(f"{a}\t{sum(c for _, c in items)}\t" + " ".join(f"{b},{c}" for b, c in keep) + "\n")
+    log(f"wrote {pairs} English pairs to {out}")
 
 def main(dict_path, out, cache):
     os.makedirs(cache, exist_ok=True)
@@ -184,4 +237,6 @@ def main(dict_path, out, cache):
     log(f"wrote {n} pairs for {len(by_first)} words to {out}")
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "build/ngram-cache")
+    cache = sys.argv[5] if len(sys.argv) > 5 else "build/ngram-cache"
+    main(sys.argv[1], sys.argv[2], cache)
+    english(sys.argv[3], sys.argv[4], cache)

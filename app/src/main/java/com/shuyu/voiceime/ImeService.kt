@@ -318,7 +318,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             KeyType.T9 -> {
                 if (alt) { if (engine.isComposing) finishComposing(raw = false); commit(output) }
                 else if (output == "1" && !engine.isComposing) commit(if (chinese) "，" else ",")
-                else { engine.input(output[0]); showComposing() }
+                else { startComposing(); engine.input(output[0]); showComposing() }
             }
             KeyType.CLEAR -> { if (engine.isComposing) { engine.reset(); topBar.showToolbar(); refreshT9Column() } }
             KeyType.PICK -> {
@@ -359,6 +359,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         val c = s[0]
         val isLetter = s.length == 1 && c in 'a'..'z'
         if (isLetter && chinese && !numbers && shift == 0) {
+            startComposing()
             engine.input(c)
             showComposing()
             return
@@ -422,6 +423,14 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         main.post { refreshCalc() }
     }
 
+    /** The last few characters before the cursor (what the next word follows). */
+    private fun textBefore(): String = currentInputConnection?.getTextBeforeCursor(8, 0)?.toString() ?: ""
+
+    /** The first letter of a new word: the text before it steers the candidate ranking. */
+    private fun startComposing() {
+        if (!engine.isComposing) engine.context = textBefore()
+    }
+
     /** Ends composing: either the first candidate or the typed letters. */
     private fun finishComposing(raw: Boolean) {
         if (!engine.isComposing) return
@@ -447,8 +456,10 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             commit(w); topBar.showToolbar(); afterWordCommitted(w)
             return
         }
+        val context = engine.context
         val done = engine.select(index)
         if (done != null) {
+            if (engine.learning) dict.learnNext(context, done)
             commit(done)
             topBar.showToolbar()
             afterWordCommitted(done)
@@ -481,9 +492,14 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             return
         }
         if (prefs.associate && chinese) {
-            val next = dict.associations(word)
+            // the editor may hold more than the word (or, in some apps, not report it yet)
+            val context = textBefore().takeIf { it.endsWith(word) } ?: word
+            val next = dict.associations(context)
             if (next.isNotEmpty()) {
-                showSmart(Smart.ASSOC, next.map { s -> TopBar.Suggestion(s) to { commit(s); afterWordCommitted(word + s) } })
+                showSmart(Smart.ASSOC, next.map { s -> TopBar.Suggestion(s) to {
+                    if (engine.learning) dict.learnNext(context, s)
+                    commit(s); afterWordCommitted(s)
+                } })
             }
         }
     }

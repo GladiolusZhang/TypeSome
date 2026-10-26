@@ -10,8 +10,18 @@ import java.io.InputStreamReader
  * System words come from assets/pinyin_dict.txt (generated at build time by tools/gen_dict.py);
  * user words (learned, imported, contacts) are kept in files/user_dict.tsv.
  */
-class Dictionary(private val openAsset: () -> java.io.InputStream, private val dataDir: File) {
-    constructor(context: Context) : this({ context.assets.open("pinyin_dict.txt") }, context.filesDir)
+class Dictionary(
+    private val openAsset: () -> java.io.InputStream,
+    private val dataDir: File,
+    private val openBigrams: () -> java.io.InputStream? = { null },
+) {
+    constructor(context: Context) : this({ context.assets.open("pinyin_dict.txt") }, context.filesDir,
+        { try { context.assets.open("zh_bigram.txt") } catch (_: java.io.IOException) { null } })
+
+    /** Words seen after [prev] in the corpora (assets/zh_bigram.txt, from tools/gen_ngram.py). */
+    class Next(val total: Int, val words: Array<String>, val counts: IntArray) {
+        fun count(w: String): Int { for (i in words.indices) if (words[i] == w) return counts[i]; return 0 }
+    }
 
     class Entry(val key: String, val syllables: Array<String>, val words: Array<String>, val freqs: IntArray)
 
@@ -28,13 +38,20 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
     private val charReading = HashMap<Char, String>()
     private val charReadingFreq = HashMap<Char, Int>()
 
+    private val next = HashMap<String, Next>(60_000)
+    /** Sum of all word frequencies: turns a frequency into a probability. */
+    private var totalFreq = 1e9
+
     private val userWords = LinkedHashMap<String, UserWord>() // "key\tword" -> entry
+    /** Learned word pairs: prev -> (next -> times chosen). */
+    private val userNext = HashMap<String, HashMap<String, Int>>()
     private val userBySig = HashMap<String, MutableList<UserWord>>()
 
     @Volatile var loaded = false
         private set
 
     private val userFile get() = File(dataDir, "user_dict.tsv")
+    private val userNextFile get() = File(dataDir, "user_next.tsv")
 
     fun load() {
         val reader = BufferedReader(InputStreamReader(openAsset(), Charsets.UTF_8), 1 shl 16)
@@ -71,8 +88,100 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
         }
         sortedWords.addAll(wordFreq.keys.filter { it.length > 1 })
         sortedWords.sort()
+        totalFreq = wordFreq.values.sumOf { it.toDouble() } + wordFreq.size
+        loadBigrams()
         loadUser()
         loaded = true
+    }
+
+    private fun loadBigrams() {
+        val input = openBigrams() ?: return
+        // share the word strings with the dictionary instead of keeping half a million copies
+        val canon = HashMap<String, String>(wordFreq.size * 2)
+        for (w in wordFreq.keys) canon[w] = w
+        BufferedReader(InputStreamReader(input, Charsets.UTF_8), 1 shl 16).useLines { lines ->
+            for (line in lines) {
+                val t1 = line.indexOf('\t')
+                val t2 = line.indexOf('\t', t1 + 1)
+                if (t1 <= 0 || t2 < 0) continue
+                val prev = line.substring(0, t1)
+                val parts = line.substring(t2 + 1).split(' ')
+                val words = Array(parts.size) { "" }
+                val counts = IntArray(parts.size)
+                for ((i, p) in parts.withIndex()) {
+                    val c = p.lastIndexOf(',')
+                    val w = p.substring(0, c)
+                    words[i] = canon[w] ?: w
+                    counts[i] = p.substring(c + 1).toIntOrNull() ?: 1
+                }
+                next[canon[prev] ?: prev] = Next(line.substring(t1 + 1, t2).toIntOrNull() ?: counts.sum(), words, counts)
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- context (word pairs)
+
+    /** The word the text ends with, as far as word-pair data knows it; null at a sentence boundary. */
+    fun lastWord(text: CharSequence?): String? {
+        if (text.isNullOrEmpty()) return null
+        for (len in minOf(4, text.length) downTo 1) {
+            val s = text.substring(text.length - len)
+            if (s[0].code < 0x3400) continue
+            if (next.containsKey(s) || userNext.containsKey(s)) return s
+        }
+        return null
+    }
+
+    /** P(w | prev) from the corpora, or from the user's own choices when those say more. */
+    fun nextProb(prev: String, w: String): Double {
+        var p = 0.0
+        next[prev]?.let { n -> val c = n.count(w); if (c > 0) p = c.toDouble() / n.total }
+        userNext[prev]?.get(w)?.let { p = maxOf(p, minOf(0.6, 0.15 * it)) }
+        return p
+    }
+
+    /** Unigram log-probability of a hit (user words carry boosted scores). */
+    fun logUni(score: Long): Double = Math.log((score + 1.0) / totalFreq)
+
+    /** Interpolated bigram log-probability, used to chain words when guessing a whole sentence. */
+    fun logP(prev: String?, w: String, score: Long): Double {
+        val pu = (score + 1.0) / totalFreq
+        if (prev == null) return Math.log(pu)
+        return Math.log(LAMBDA * nextProb(prev, w) + (1 - LAMBDA) * pu)
+    }
+
+    /**
+     * How much more likely [w] is right after [prev] than on its own, as a bounded log bonus:
+     * enough to lift 是 after 我, not enough for one odd corpus pair to bury a common word.
+     */
+    fun contextBonus(prev: String?, w: String, score: Long): Double {
+        if (prev == null) return 0.0
+        val pb = nextProb(prev, w)
+        if (pb <= 0.0) return 0.0
+        val pu = (score + 1.0) / totalFreq
+        return minOf(Math.log(1 + LAMBDA * pb / ((1 - LAMBDA) * pu)), MAX_BONUS)
+    }
+
+    /** Remembers that the user put [w] right after the text [before]. */
+    fun learnNext(before: CharSequence?, w: String) {
+        // whole guessed sentences are not "next words"
+        if (w.isEmpty() || w[0].code < 0x3400 || (w.length > 4 && !wordFreq.containsKey(w))) return
+        val prev = lastKnownWord(before) ?: return
+        val m = userNext.getOrPut(prev) { HashMap() }
+        m[w] = (m[w] ?: 0) + 1
+        nextDirty = true
+        if (++nextChanges % 10 == 0) saveUserNext()
+    }
+
+    /** Like [lastWord], but any dictionary word counts (for learning pairs the corpora never saw). */
+    private fun lastKnownWord(text: CharSequence?): String? {
+        if (text.isNullOrEmpty()) return null
+        for (len in minOf(4, text.length) downTo 1) {
+            val s = text.substring(text.length - len)
+            if (s[0].code < 0x3400) continue
+            if (next.containsKey(s) || userNext.containsKey(s) || wordFreq.containsKey(s)) return s
+        }
+        return null
     }
 
     // ---------------------------------------------------------------- lookup
@@ -135,13 +244,42 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
         return true
     }
 
-    /** Words that start with [prefix] (for 联想), best first. */
-    fun associations(prefix: String, limit: Int = 30): List<String> {
-        if (prefix.isEmpty()) return emptyList()
+    /**
+     * 联想 for the text before the cursor, best first: words that usually follow its last word,
+     * mixed with completions of the words it ends with (中 → 国, 人工 → 智能).
+     */
+    fun associations(context: String, limit: Int = 30): List<String> {
+        if (context.isEmpty()) return emptyList()
+        val prev = lastWord(context)
+        val following = ArrayList<Pair<String, Double>>()
+        if (prev != null) {
+            next[prev]?.let { n -> for (i in n.words.indices) following.add(n.words[i] to n.counts[i].toDouble() / n.total) }
+            userNext[prev]?.forEach { (w, c) -> following.add(w to 0.2 + 0.15 * c) }
+        }
+        following.sortByDescending { it.second }
+        // completions must cover the whole last word: 明天 may become 明天见, never 天+津
+        val completions = completions(context, prev?.length ?: 1)
+        // after a word that is often followed by others, those come first;
+        // a lone, rarely standalone character is more likely the start of a longer word
+        val wordFirst = prev != null && (prev.length > 1 || (next[prev]?.total ?: 0) >= 500)
+        val (first, second) = if (wordFirst) following.map { it.first } to completions else completions to following.map { it.first }
+        val ratio = if (wordFirst) 3 else 2
+        val out = LinkedHashSet<String>()
+        var i = 0; var j = 0
+        while (out.size < limit && (i < first.size || j < second.size)) {
+            repeat(ratio) { if (i < first.size) out.add(first[i++]) }
+            if (j < second.size) out.add(second[j++])
+        }
+        return out.take(limit)
+    }
+
+    /** Rest of the words that start with the end of [prefix] (longer overlaps rank higher). */
+    private fun completions(prefix: String, minLen: Int): List<String> {
         val tail = prefix.takeLast(4)
         val res = ArrayList<Pair<String, Int>>()
-        for (start in tail.indices) {
+        for (start in 0..tail.length - minLen) {
             val p = tail.substring(start)
+            if (p[0].code < 0x3400) continue
             var idx = sortedWords.binarySearch(p).let { if (it < 0) -it - 1 else it + 1 }
             while (idx < sortedWords.size && sortedWords[idx].startsWith(p)) {
                 val w = sortedWords[idx]
@@ -150,9 +288,9 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
             }
             if (res.size > 400) break
         }
-        for (u in userWords.values) if (u.word.length > prefix.length && u.word.startsWith(prefix))
-            res.add(u.word.substring(prefix.length) to 10_000_000)
-        return res.sortedByDescending { it.second }.map { it.first }.distinct().take(limit)
+        for (u in userWords.values) if (u.word.length > tail.length && u.word.startsWith(tail))
+            res.add(u.word.substring(tail.length) to 10_000_000)
+        return res.sortedByDescending { it.second }.map { it.first }.distinct().take(40)
     }
 
     /** Best-guess pinyin key for an arbitrary Chinese string, or null if a char is unknown. */
@@ -184,9 +322,9 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
 
     fun clearUser(keepContacts: Boolean = true) {
         val keep = if (keepContacts) userWords.values.filter { it.source == SRC_CONTACT } else emptyList()
-        userWords.clear(); userBySig.clear()
+        userWords.clear(); userBySig.clear(); userNext.clear()
         keep.forEach { addUser(it) }
-        saveUser()
+        saveUser(); saveUserNext()
     }
 
     fun addManual(word: String, pinyin: String?): Boolean {
@@ -237,7 +375,29 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
         userBySig.getOrPut(sig(u.key.split('\'').toTypedArray())) { ArrayList() }.add(u)
     }
 
+    private var nextDirty = false
+    private var nextChanges = 0
+
+    private fun loadUserNext() {
+        val f = userNextFile
+        if (!f.exists()) return
+        f.forEachLine { line ->
+            val p = line.split('\t')
+            if (p.size >= 3) userNext.getOrPut(p[0]) { HashMap() }[p[1]] = p[2].toIntOrNull() ?: 1
+        }
+    }
+
+    @Synchronized private fun saveUserNext() {
+        nextDirty = false
+        // keep the file small: the most used pairs win
+        val rows = userNext.flatMap { (a, m) -> m.map { (b, c) -> Triple(a, b, c) } }.sortedByDescending { it.third }.take(MAX_USER_PAIRS)
+        val tmp = File(userNextFile.path + ".tmp")
+        tmp.bufferedWriter().use { w -> for ((a, b, c) in rows) w.write("$a\t$b\t$c\n") }
+        tmp.renameTo(userNextFile)
+    }
+
     private fun loadUser() {
+        loadUserNext()
         val f = userFile
         if (!f.exists()) return
         f.forEachLine { line ->
@@ -252,7 +412,7 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
         if (userWords.size % 5 == 0) saveUser()
     }
 
-    fun flush() { if (dirty) saveUser() }
+    fun flush() { if (dirty) saveUser(); if (nextDirty) saveUserNext() }
 
     @Synchronized private fun saveUser() {
         dirty = false
@@ -266,6 +426,9 @@ class Dictionary(private val openAsset: () -> java.io.InputStream, private val d
     companion object {
         const val SRC_USER = "user"
         const val SRC_CONTACT = "contact"
+        private const val LAMBDA = 0.4
+        private const val MAX_BONUS = 2.5
+        private const val MAX_USER_PAIRS = 5000
 
         private fun firstLetter(s: String): Char {
             val c = s[0]

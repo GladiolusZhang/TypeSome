@@ -18,9 +18,11 @@ jobs:
       - name: Generate pinyin dictionary (rime-ice)
         run: python tools/gen_dict.py
       - name: Count word pairs
+        env:
+          NGRAM_LINES: "8000000"
         run: |
           mkdir -p data
-          python tools/gen_ngram.py app/src/main/assets/pinyin_dict.txt data/zh_bigram.txt 2>&1 | tee data/ngram-log.txt
+          python tools/gen_ngram.py app/src/main/assets/pinyin_dict.txt data/zh_bigram.txt app/src/main/assets/en_words.txt data/en_bigram.txt 2>&1 | tee data/ngram-log.txt
       - name: Publish to the "data" branch
         run: |
           cd data
