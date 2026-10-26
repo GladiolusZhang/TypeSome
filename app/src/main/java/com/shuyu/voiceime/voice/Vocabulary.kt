@@ -28,13 +28,6 @@ class Vocabulary(text: String) {
 
     fun apply(text: String): String = replacements.fold(text) { t, (from, to) -> t.replace(from, to) }
 
-    /** Appended to the system prompt so the model knows how these words are spelled. */
-    fun promptSection(): String =
-        if (terms.isEmpty()) ""
-        else "\n\nCUSTOM VOCABULARY — the user's own terms. When the transcription contains something that sounds like " +
-            "one of these (a homophone, letters mixed with Chinese numbers, a phonetic spelling…), write the term exactly as listed:\n" +
-            terms.joinToString("\n") { "- $it" }
-
     /** Comma-separated terms for Whisper-style `prompt` biasing. */
     fun asHint(): String = terms.joinToString(", ")
 

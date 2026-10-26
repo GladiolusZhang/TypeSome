@@ -620,7 +620,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
 
     private fun finishVoice(mode: Int) {
         overlay.hide()
-        if (mode < 0) voice.cancel() else voice.finish(VoiceController.Mode.values()[mode])
+        if (mode < 0) voice.cancel() else voice.finish(VoiceController.Mode.values()[mode], currentInputEditorInfo?.packageName)
     }
 
     override fun onLevel(level: Float) { if (::overlay.isInitialized) overlay.setLevel(level) }

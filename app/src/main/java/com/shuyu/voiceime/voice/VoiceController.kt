@@ -47,7 +47,7 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
         ui.onStatus(null)
     }
 
-    fun finish(mode: Mode) {
+    fun finish(mode: Mode, app: String? = null) {
         val r = recorder ?: return
         recorder = null
         val raw = r.stop()
@@ -67,29 +67,27 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
         worker.execute {
             try {
                 val vocab = Vocabulary(prefs.vocabulary)
-                // who is speaking + their own words, appended to every prompt
-                val extra = (if (prefs.userProfile.isNotBlank()) "\n\nABOUT THE SPEAKER (use it to resolve ambiguous words):\n" + prefs.userProfile.trim() else "") +
-                    vocab.promptSection()
                 val text = vocab.apply(Vad.clean(recognize(pcm, vocab)))
                 if (id != job) return@execute
                 if (text.isBlank()) { post(id) { ui.onStatus(null); ui.onError("没有识别到内容") }; return@execute }
+                // core rules + profile + vocabulary stay identical across requests (cache-friendly prefix);
+                // only the short mode block and the app tone differ
+                val tone = if (prefs.appTone) Prompts.appTone(app) else null
+                fun system(mode: String) = Prompts.build(prefs.corePrompt, prefs.userProfile, vocab, mode, tone)
+                fun llm(sys: String) = CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, sys, CloudApi.wrap(text), prefs.noThinking)
                 val out = when (mode) {
-                    Mode.PLAIN -> if (!prefs.plainCorrect || prefs.effectiveLlmKey.isBlank()) text else {
+                    Mode.PLAIN -> if (!prefs.plainCorrect || prefs.effectiveLlmKey.isBlank() || !Prompts.needsProofread(text)) text else {
                         post(id) { ui.onStatus("纠错中…") }
                         // only a proofreading pass: if the model is unreachable, the raw text is still fine
-                        try {
-                            vocab.apply(CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel,
-                                prefs.correctPrompt + extra, CloudApi.wrap(text), prefs.noThinking)).ifBlank { text }
-                        } catch (_: Exception) { text }
+                        try { vocab.apply(llm(system(prefs.proofreadPrompt))).ifBlank { text } } catch (_: Exception) { text }
                     }
                     Mode.SUMMARY -> {
                         post(id) { ui.onStatus("AI 整理中…") }
-                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt + extra, CloudApi.wrap(text), prefs.noThinking)
+                        vocab.apply(llm(system(prefs.polishPrompt)))
                     }
                     Mode.TRANSLATE -> {
                         post(id) { ui.onStatus("翻译成${prefs.targetLanguage}…") }
-                        val sys = prefs.translatePrompt.replace("{lang}", prefs.targetLanguage) + extra
-                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, sys, CloudApi.wrap(text), prefs.noThinking)
+                        llm(system(prefs.translatePrompt.replace("{lang}", prefs.targetLanguage)))
                     }
                 }
                 post(id) { ui.onStatus(null); ui.onResult(out) }

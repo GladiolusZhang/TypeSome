@@ -35,6 +35,8 @@ import android.widget.TextView
 import android.widget.Toast
 import com.shuyu.voiceime.ui.dp
 import com.shuyu.voiceime.voice.CloudApi
+import com.shuyu.voiceime.voice.Prompts
+import com.shuyu.voiceime.voice.Vocabulary
 import com.shuyu.voiceime.voice.ModelManager
 import com.shuyu.voiceime.voice.OfflineAsr
 import java.util.concurrent.Executors
@@ -245,12 +247,16 @@ class SettingsActivity : Activity() {
         val profile = field(llm, "关于我（告诉模型你常说哪些领域的话，识别有歧义时优先往这边理解）", prefs.userProfile, multiline = true) { prefs.userProfile = it }
         field(llm, "我的词汇（每行一个，如 DeepSeek；固定替换写成 D四 => DeepSeek）", prefs.vocabulary,
             "DeepSeek\nD四 => DeepSeek", multiline = true) { prefs.vocabulary = it }
-        val correct = field(llm, "「语音输入」纠错提示词", prefs.correctPrompt, multiline = true) { prefs.correctPrompt = it }
-        val summary = field(llm, "「智能整理」提示词", prefs.summaryPrompt, multiline = true) { prefs.summaryPrompt = it }
-        val translate = field(llm, "「翻译」提示词（{lang} 会替换成目标语言）", prefs.translatePrompt, multiline = true) { prefs.translatePrompt = it }
+        switch(llm, "按目标应用调整语气（微信偏口语、邮件偏正式、笔记偏书面）", "app_tone", true)
+        // the prompt is assembled from layers: 通用规则 is shared by every mode and gets prefix-cached
+        val core = field(llm, "通用规则（三种模式共用，越短越省 token）", prefs.corePrompt, multiline = true) { prefs.corePrompt = it }
+        val proof = field(llm, "「语音输入」纠错附加", prefs.proofreadPrompt, multiline = true) { prefs.proofreadPrompt = it }
+        val polish = field(llm, "「智能整理」附加", prefs.polishPrompt, multiline = true) { prefs.polishPrompt = it }
+        val translate = field(llm, "「翻译」附加（{lang} 会替换成目标语言）", prefs.translatePrompt, multiline = true) { prefs.translatePrompt = it }
         val r3 = row(llm)
         button(r3, "恢复默认提示词") {
-            summary.setText(Prefs.DEFAULT_SUMMARY_PROMPT); translate.setText(Prefs.DEFAULT_TRANSLATE_PROMPT); correct.setText(Prefs.DEFAULT_CORRECT_PROMPT); profile.setText(Prefs.DEFAULT_PROFILE)
+            core.setText(Prompts.CORE); proof.setText(Prompts.PROOFREAD); polish.setText(Prompts.POLISH)
+            translate.setText(Prompts.TRANSLATE); profile.setText(Prompts.PROFILE)
         }
         button(r3, "测试整理效果") { testLlm() }
 
@@ -418,7 +424,8 @@ class SettingsActivity : Activity() {
         val sample = "嗯那个就是我想说一下啊，明天的会议呢改到下午三点，呃不对是三点半，然后地点还是在那个三楼会议室，大家记得带电脑哈"
         val dlg = AlertDialog.Builder(this).setTitle("测试中…").setMessage("原文：$sample").setPositiveButton("关闭", null).show()
         io.execute {
-            val out = try { CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt, CloudApi.wrap(sample), prefs.noThinking) }
+            val out = try { CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel,
+                Prompts.build(prefs.corePrompt, prefs.userProfile, Vocabulary(prefs.vocabulary), prefs.polishPrompt, null), CloudApi.wrap(sample), prefs.noThinking) }
             catch (e: Exception) { "出错：${e.message}" }
             main.post { dlg.setTitle("整理结果"); dlg.setMessage("原文：$sample\n\n结果：\n$out") }
         }
