@@ -9,8 +9,12 @@ import kotlin.math.sqrt
 object Vad {
     private const val FRAME = 320 // 20 ms
 
-    /** The recording trimmed to its speech (with some padding), or null if nobody spoke. */
-    fun trim(pcm: ByteArray): ByteArray? {
+    /**
+     * The recording trimmed to its speech (with some padding), or null if nobody spoke.
+     * [level] 0 turns the filter off; 1..10 raise the bar (default 3 still picks up quiet speech).
+     */
+    fun trim(pcm: ByteArray, level: Int = 3): ByteArray? {
+        if (level <= 0) return pcm
         val n = pcm.size / 2 / FRAME
         if (n == 0) return null
         val rms = FloatArray(n)
@@ -24,10 +28,10 @@ object Vad {
             rms[f] = sqrt(sum / FRAME).toFloat()
         }
         val noise = rms.sorted()[n / 10]
-        val threshold = maxOf(noise * 2.5f, 250f)
+        val threshold = maxOf(noise * (1.2f + 0.25f * level), 25f * level)
         val speech = rms.indices.filter { rms[it] > threshold }
-        if (speech.size < 8) return null // < 160 ms of sound above the noise floor
-        val pad = 15 // 300 ms
+        if (speech.size < 3 + level) return null // too little sound above the noise floor
+        val pad = 20 // 400 ms, so soft word onsets and endings survive
         val from = (speech.first() - pad).coerceAtLeast(0)
         val to = (speech.last() + pad + 1).coerceAtMost(n)
         return pcm.copyOfRange(from * FRAME * 2, to * FRAME * 2)

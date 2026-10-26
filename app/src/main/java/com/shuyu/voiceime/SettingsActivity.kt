@@ -199,6 +199,19 @@ class SettingsActivity : Activity() {
             updateEngineBoxes()
         }
 
+        val vadLabel = TextView(this).apply { setTextColor(Color.DKGRAY); setPadding(0, px(10f), 0, 0) }
+        fun vadText(v: Int) = "静音过滤：$v（越小越容易收到轻声说话，0 = 关闭；没声音时被识别成「嗯」就调大）"
+        vadLabel.text = vadText(prefs.vadLevel)
+        asr.addView(vadLabel)
+        asr.addView(SeekBar(this).apply {
+            max = 10; progress = prefs.vadLevel
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) { prefs.sp.edit().putInt("vad_level", p).apply(); vadLabel.text = vadText(p) }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
+            })
+        })
+
         // ---- LLM
         val llm = section("大模型（智能整理 / 翻译）")
         note(llm, "使用 OpenAI 兼容的 /chat/completions 接口。Key 留空时自动沿用上面语音识别的 Key（同一家服务商时很方便）。")
@@ -400,7 +413,7 @@ class SettingsActivity : Activity() {
         val sample = "嗯那个就是我想说一下啊，明天的会议呢改到下午三点，呃不对是三点半，然后地点还是在那个三楼会议室，大家记得带电脑哈"
         val dlg = AlertDialog.Builder(this).setTitle("测试中…").setMessage("原文：$sample").setPositiveButton("关闭", null).show()
         io.execute {
-            val out = try { CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt, sample, prefs.noThinking) }
+            val out = try { CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt, CloudApi.wrap(sample), prefs.noThinking) }
             catch (e: Exception) { "出错：${e.message}" }
             main.post { dlg.setTitle("整理结果"); dlg.setMessage("原文：$sample\n\n结果：\n$out") }
         }

@@ -56,7 +56,7 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
             ui.onError("说话时间太短")
             return
         }
-        val pcm = Vad.trim(raw)
+        val pcm = Vad.trim(raw, prefs.vadLevel)
         if (pcm == null) {
             ui.onStatus(null)
             ui.onError("没有听到声音")
@@ -73,12 +73,12 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
                     Mode.PLAIN -> text
                     Mode.SUMMARY -> {
                         post(id) { ui.onStatus("AI 整理中…") }
-                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt, text, prefs.noThinking)
+                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt, CloudApi.wrap(text), prefs.noThinking)
                     }
                     Mode.TRANSLATE -> {
                         post(id) { ui.onStatus("翻译成${prefs.targetLanguage}…") }
                         val sys = prefs.translatePrompt.replace("{lang}", prefs.targetLanguage)
-                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, sys, text, prefs.noThinking)
+                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, sys, CloudApi.wrap(text), prefs.noThinking)
                     }
                 }
                 post(id) { ui.onStatus(null); ui.onResult(out) }

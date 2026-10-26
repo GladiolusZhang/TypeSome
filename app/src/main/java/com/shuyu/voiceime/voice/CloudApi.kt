@@ -18,6 +18,9 @@ object CloudApi {
         .writeTimeout(120, TimeUnit.SECONDS)
         .build()
 
+    /** The prompts expect the dictated text inside <transcription> tags. */
+    fun wrap(text: String) = "<transcription>\n$text\n</transcription>"
+
     private fun url(base: String, path: String) = base.trimEnd('/') + path
 
     fun transcribe(baseUrl: String, apiKey: String, model: String, wav: ByteArray, language: String): String {
