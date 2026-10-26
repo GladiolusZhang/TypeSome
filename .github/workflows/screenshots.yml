@@ -16,11 +16,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Pick the build to test
+        id: run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          id="${{ github.event.workflow_run.id }}"
+          [ -n "$id" ] || id=$(gh api "repos/${{ github.repository }}/actions/workflows/build.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].id')
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
       - uses: actions/download-artifact@v5
         with:
           name: TypeSome-apk
           path: apk
-          run-id: ${{ github.event.workflow_run.id || '' }}
+          run-id: ${{ steps.run.outputs.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable KVM
@@ -39,13 +48,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim
-          script: |
-            adb wait-for-device; sleep 15
-            adb install -r -g $(ls apk/*.apk | head -1) || (sleep 10; adb install -r -g $(ls apk/*.apk | head -1))
-            adb shell ime enable com.shuyu.voiceime/.ImeService
-            adb shell ime set com.shuyu.voiceime/.ImeService
-            adb shell settings put secure show_ime_with_hard_keyboard 1
-            python3 tools/screens.py shots > screens-log.txt 2>&1 || echo "screens.py failed" >> screens-log.txt
+          script: bash tools/emu.sh
 
       - name: Publish screenshots to the "screenshots" branch
         if: always()
