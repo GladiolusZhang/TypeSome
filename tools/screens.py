@@ -52,9 +52,8 @@ def hold_and_shot(x, y, x2, y2, ms, at, name):
     time.sleep(1.5)
 
 d = density()
-# CI emulators often show "Pixel Launcher isn't responding": hide error dialogs and park the launcher
+# CI emulators often show "Pixel Launcher isn't responding": hide error dialogs
 subprocess.run(["adb", "shell", "settings", "put", "global", "hide_error_dialogs", "1"])
-subprocess.run(["adb", "shell", "pm", "disable-user", "--user", "0", "com.google.android.apps.nexuslauncher"])
 subprocess.run(["adb", "shell", "am", "broadcast", "-a", "android.intent.action.CLOSE_SYSTEM_DIALOGS"])
 time.sleep(2)
 adb("am", "start", "-n", "com.shuyu.voiceime/.SettingsActivity", "--ez", "demo", "true")
