@@ -37,7 +37,9 @@
 本地编译：
 
 ```bash
-python3 tools/gen_dict.py        # 下载 rime-ice 词库并生成 app/src/main/assets/pinyin_dict.txt
+python3 tools/gen_dict.py        # 下载 rime-ice 词库，生成 pinyin_dict.txt 和 en_words.txt
+# 可选：联想/整句数据（下载较大语料，较慢；也可以从 data 分支直接取 zh_bigram.txt 等文件）
+python3 tools/gen_ngram.py app/src/main/assets/pinyin_dict.txt app/src/main/assets/zh_bigram.txt app/src/main/assets/en_words.txt app/src/main/assets/en_bigram.txt
 ./gradlew assembleRelease
 ```
 
@@ -50,6 +52,7 @@ python3 tools/gen_dict.py        # 下载 rime-ice 词库并生成 app/src/main/
 ## 说明
 
 - 拼音词库在编译时从 [rime-ice（雾凇拼音）](https://github.com/iDvel/rime-ice) 生成（GPL-3.0），不随仓库保存。
+- 联想和整句猜测用的「词对」数据由 Actions 里的「Build word-pair data」按需生成（`tools/gen_ngram.py`），放在 `data` 分支，编译时复制进 APK：书面语来自 [libpinyin](https://github.com/libpinyin/libpinyin) 的二元模型（GPL-3.0+），口语来自 [OPUS OpenSubtitles](https://opus.nlpl.eu/OpenSubtitles.php) 的中英文字幕。英文词频来自 [FrequencyWords](https://github.com/hermitdave/FrequencyWords)（CC BY-SA 4.0）。
 - 签名用的是仓库里的 `app/voiceime.keystore`（密码在 `app/build.gradle.kts`），方便每次新版本直接覆盖安装。如果打算公开发布，请换成自己的密钥并通过环境变量 `KEYSTORE_FILE` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` 传入。
 - 小米、OPPO、vivo、华为等系统有「验证码保护」，会挡住第三方 App 读取验证码短信。这些厂商没有开放给输入法的验证码接口，所以这里改为读取通知；如仍不行，请在系统短信 App 设置里关闭验证码保护。
 - 皮肤：默认「无缝」，白天纯白、夜间灰色，跟随系统深浅色；设置里还可以选圆角按键风格。
