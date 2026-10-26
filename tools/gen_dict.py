@@ -42,6 +42,7 @@ def main(out, cache):
                 continue
             (chars if len(word) == 1 else words).append((word, py.replace(" ", "'"), w))
     words.sort(key=lambda x: -x[2])
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     table = collections.defaultdict(dict)
     for word, key, w in chars + words[:MAX_WORDS]:
         table[key][word] = max(table[key].get(word, 0), w)
