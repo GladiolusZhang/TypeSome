@@ -36,8 +36,10 @@ class HandwritingView(ctx: Context, private val onInk: (List<List<FloatArray>>) 
         invalidate()
     }
 
+    private val paint0 = Paint()
+
     override fun onDraw(c: Canvas) {
-        c.drawColor(Theme.BG)
+        paint0.color = Theme.BG; c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint0)  // not drawColor: parents don't clip children
         if (strokes.isEmpty()) {
             hint.textSize = dp(16f)
             c.drawText("在此书写，支持连写", width / 2f, height / 2f, hint)

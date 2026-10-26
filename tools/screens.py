@@ -75,8 +75,6 @@ space_x = (sum(weights[:3]) + weights[3] / 2) / sum(weights) * W
 space_y = row_y(3)
 
 # typing: n i h a o
-for ch_x, ch_row in [(5.5, 2), (7.5, 0), (5.5, 1), (0.5 + 0.5, 1), (8.5, 0)]:
-    pass
 for letter in "nihao":
     rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
     for ri, r in enumerate(rows):
@@ -108,3 +106,12 @@ tap(W / 8 * 3, top + dp(44) + dp(20) + (dp(60) * 4 + dp(6) - dp(40)) / 4)  # bac
 tap(weights[0] / 2 / sum(weights) * W, row_y(3)); shot("09_numbers")
 tap(W * 0.92, row_y(3))
 tap((sum(weights[:5]) + weights[5] / 2) / sum(weights) * W, row_y(3)); shot("10_symbols")
+
+# dark skin (follows the system)
+adb("input", "keyevent", "KEYCODE_BACK")
+adb("cmd", "uimode", "night", "yes")
+time.sleep(3)
+adb("am", "start", "-n", "com.shuyu.voiceime/.SettingsActivity", "--ez", "demo", "true")
+time.sleep(5)
+shot("11_dark")
+hold_and_shot(space_x, space_y, space_x, space_y, 3500, 2.0, "12_dark_voice")

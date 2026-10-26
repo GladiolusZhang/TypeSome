@@ -47,17 +47,17 @@ private fun Context.tv(text: String, sizeSp: Float, color: Int = Theme.TEXT) = T
 
 /** Pressed-state background for plain TextView buttons. */
 @SuppressLint("ClickableViewAccessibility")
-private fun View.pressable(radiusDp: Float = 8f, outline: Boolean = false) {
-    val normal = GradientDrawable().apply {
-        cornerRadius = context.dp(radiusDp)
-        setColor(0)
-        if (outline) setStroke(context.dp(1f).toInt(), Theme.OUTLINE)
-    }
-    val down = GradientDrawable().apply {
-        cornerRadius = context.dp(radiusDp)
-        setColor(Theme.PRESSED)
-        if (outline) setStroke(context.dp(1f).toInt(), Theme.OUTLINE)
-    }
+private fun View.pressable(radiusDp: Float = 8f, outline: Boolean = false, cap: Boolean = outline) {
+    // On the key-cap skins, outlined buttons become filled caps like the keys.
+    val asCap = cap && !Theme.flat
+    val inset = if (asCap && !outline) context.dp(3f).toInt() else 0
+    fun bg(fill: Int) = android.graphics.drawable.InsetDrawable(GradientDrawable().apply {
+        cornerRadius = context.dp(if (asCap) 7f else radiusDp)
+        setColor(fill)
+        if (outline && !asCap) setStroke(context.dp(1f).toInt(), Theme.OUTLINE)
+    }, inset, inset + context.dp(1f).toInt(), inset, inset + context.dp(1f).toInt())
+    val normal = bg(if (asCap) Theme.KEY else 0)
+    val down = bg(if (asCap) Theme.KEY_DOWN else Theme.PRESSED)
     background = normal
     setOnTouchListener { v, e ->
         when (e.actionMasked) {
@@ -82,7 +82,7 @@ private fun header(ctx: Context, title: String, host: PanelHost, barHeight: Int,
 }
 
 /** Simple grid of text cells inside a vertical ScrollView. */
-private class Grid(ctx: Context, val columns: Int, val cellHeight: Int) : ScrollView(ctx) {
+private class Grid(ctx: Context, val columns: Int, val cellHeight: Int, val caps: Boolean = false) : ScrollView(ctx) {
     val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     init { isVerticalScrollBarEnabled = false; addView(box) }
 
@@ -104,7 +104,7 @@ private class Grid(ctx: Context, val columns: Int, val cellHeight: Int) : Scroll
             }
             val cell = context.tv(s, sizeSp)
             cell.maxLines = 1
-            cell.pressable()
+            cell.pressable(cap = caps)
             cell.setOnClickListener { onClick(s) }
             row!!.addView(cell, LinearLayout.LayoutParams(0, cellHeight, 1f))
             inRow++
@@ -135,7 +135,7 @@ class SymbolPanel(ctx: Context, private val host: PanelHost, recent: List<String
         "箭头" to "←↑→↓↖↗↘↙↔↕⇐⇒⇔⇑⇓➔➜➤↩↪⤴⤵".map { it.toString() },
         "特殊" to "★☆○●◎◇◆□■△▲▽▼※✓✔✗✘♀♂♪♫☀☁☂☃☺☹♠♥♣♦❤✿❀✪✈☎✉".map { it.toString() },
     )
-    private val grid = Grid(ctx, 4, ctx.dp(62f).toInt())
+    private val grid = Grid(ctx, 4, ctx.dp(62f).toInt(), caps = true)
     private val catViews = ArrayList<TextView>()
     private var locked = false
 
@@ -277,7 +277,7 @@ class EditPanel(ctx: Context, private val host: PanelHost, barHeight: Int) : Lin
         for (row in buttons) {
             val r = LinearLayout(ctx).apply { orientation = HORIZONTAL }
             for ((label, action) in row) {
-                val b = ctx.tv(label, 18f, Theme.HINT)
+                val b = ctx.tv(label, 18f, if (Theme.flat) Theme.HINT else Theme.TEXT)
                 b.pressable(4f, outline = true)
                 b.setOnClickListener { host.feedback(); host.editAction(action) }
                 r.addView(b, LayoutParams(0, -1, 1f).apply { setMargins(ctx.dp(4f).toInt(), ctx.dp(4f).toInt(), ctx.dp(4f).toInt(), ctx.dp(4f).toInt()) })

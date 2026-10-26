@@ -115,6 +115,8 @@ class VoiceOverlay(ctx: Context, private val onFeedback: () -> Unit, private val
         return ch(24) or ch(16) or ch(8) or ch(0)
     }
 
+    private val paint0 = Paint()
+
     override fun onDraw(c: Canvas) {
         val now = SystemClock.uptimeMillis()
         // ease the per-card highlight toward the current selection
@@ -123,7 +125,7 @@ class VoiceOverlay(ctx: Context, private val onFeedback: () -> Unit, private val
             sel[i] += (target - sel[i]) * 0.3f
             if (abs(target - sel[i]) < 0.01f) sel[i] = target
         }
-        c.drawColor(Theme.BG)
+        paint0.color = Theme.BG; c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint0)  // not drawColor: parents don't clip children
 
         // ---- mode cards
         val pad = dp(10f)

@@ -128,8 +128,10 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
     private val bubbleRect = RectF()
     private val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33000000 }
 
+    private val paint0 = Paint()
+
     override fun onDraw(c: Canvas) {
-        c.drawColor(Theme.BG)
+        paint0.color = Theme.BG; c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint0)  // not drawColor: parents don't clip children
         val now = android.os.SystemClock.uptimeMillis()
         var animating = false
         if (Theme.flat) {
