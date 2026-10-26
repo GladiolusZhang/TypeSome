@@ -12,13 +12,18 @@ import android.view.MotionEvent
 import android.view.View
 
 /**
- * Keyboard colors. Three skins:
- *  - light / dark: rounded key caps on a soft background (default; dark follows the system)
- *  - classic: the flat gray skin of the reference screenshots (no key caps, thin row separators)
+ * Keyboard colors.
+ *  - seamless (default): flat, no key caps, thin row separators; pure white by day, gray ("classic") at night
+ *  - white / classic: the two seamless variants fixed
+ *  - light / dark / auto: rounded key caps on a soft background
  */
 object Theme {
     var BG = 0; var BAR = 0; var BAR_LINE = 0
-    var TEXT = 0; var HINT = 0; var SEP = 0; var PRESSED = 0
+    /** Icons and function-key labels. */
+    var TEXT = 0
+    /** Letters and digits on the keys (darker than icons on the seamless skins). */
+    var LETTER = 0
+    var HINT = 0; var SEP = 0; var PRESSED = 0
     var ACCENT = 0; var ON_ACCENT = Color.WHITE
     var CARD = 0; var OUTLINE = 0; var BUBBLE = 0
     /** Key caps (letter keys), function keys, and their pressed shades. */
@@ -31,38 +36,49 @@ object Theme {
 
     private fun c(s: String) = Color.parseColor(s)
 
-    /** skin: "auto" | "light" | "dark" | "classic" */
+    /** skin: "seamless" | "white" | "classic" | "auto" | "light" | "dark" */
     fun apply(ctx: Context, skin: String) {
         val night = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        palette(if (skin == "auto") (if (night) "dark" else "light") else skin)
+        palette(when (skin) {
+            "seamless" -> if (night) "classic" else "white"
+            "auto" -> if (night) "dark" else "light"
+            else -> skin
+        })
     }
 
     private fun palette(s: String) {
         signature = s
-        flat = s == "classic"; dark = s == "dark"
+        flat = s == "classic" || s == "white"; dark = s == "dark"
         when (s) {
             "dark" -> {
                 BG = c("#1B1B1D"); BAR = BG; BAR_LINE = c("#2A2A2D")
                 KEY = c("#3B3B3F"); KEY_FN = c("#2A2A2E"); KEY_DOWN = c("#56565C"); KEY_FN_DOWN = c("#44444A"); KEY_SHADOW = c("#0E0E10")
-                TEXT = c("#EDEDF0"); HINT = c("#8E8E95"); SEP = c("#333337"); PRESSED = c("#38383D")
+                TEXT = c("#EDEDF0"); LETTER = TEXT; HINT = c("#8E8E95"); SEP = c("#333337"); PRESSED = c("#38383D")
                 ACCENT = c("#4C8DFF"); CARD = c("#2C2C30"); OUTLINE = c("#4A4A50"); BUBBLE = c("#4A4A50")
             }
+            // sampled from the user's screenshot of the night (gray) skin
             "classic" -> {
                 BG = c("#B0B0B0"); BAR = BG; BAR_LINE = c("#999999")
                 KEY = BG; KEY_FN = BG; KEY_DOWN = c("#9C9C9C"); KEY_FN_DOWN = KEY_DOWN; KEY_SHADOW = 0
-                TEXT = c("#484F59"); HINT = c("#646B75"); SEP = c("#9D9D9D"); PRESSED = c("#9C9C9C")
+                TEXT = c("#4A4E5A"); LETTER = c("#2A2E3A"); HINT = c("#7B7B7B"); SEP = c("#9D9D9D"); PRESSED = c("#9C9C9C")
                 ACCENT = c("#2F7BEA"); CARD = c("#C2C2C2"); OUTLINE = c("#8A8A8A"); BUBBLE = c("#F4F4F6")
+            }
+            "white" -> {
+                BG = Color.WHITE; BAR = BG; BAR_LINE = c("#E3E3E3")
+                KEY = BG; KEY_FN = BG; KEY_DOWN = c("#E8E9EB"); KEY_FN_DOWN = KEY_DOWN; KEY_SHADOW = 0
+                TEXT = c("#5C6370"); LETTER = c("#333844"); HINT = c("#A3A8B0"); SEP = c("#E6E6E6"); PRESSED = c("#E8E9EB")
+                ACCENT = c("#2F7BEA"); CARD = c("#F1F2F4"); OUTLINE = c("#D2D4D8"); BUBBLE = Color.WHITE
             }
             else -> {
                 BG = c("#E4E6EB"); BAR = BG; BAR_LINE = c("#D5D8DE")
                 KEY = Color.WHITE; KEY_FN = c("#C9CDD5"); KEY_DOWN = c("#D9DCE2"); KEY_FN_DOWN = c("#B3B8C2"); KEY_SHADOW = c("#A9AEB8")
-                TEXT = c("#1D2129"); HINT = c("#868C96"); SEP = c("#D0D3D9"); PRESSED = c("#D3D6DC")
+                TEXT = c("#1D2129"); LETTER = TEXT; HINT = c("#868C96"); SEP = c("#D0D3D9"); PRESSED = c("#D3D6DC")
                 ACCENT = c("#2F6FEB"); CARD = Color.WHITE; OUTLINE = c("#C3C7CF"); BUBBLE = Color.WHITE
             }
         }
     }
 
-    init { palette("light") }
+    init { palette("white") }
 }
 
 /** Linear blend of two ARGB colors. */

@@ -129,7 +129,15 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         panelHost = FrameLayout(this)
         panelHost.visibility = View.GONE
         root.addView(panelHost, FrameLayout.LayoutParams(-1, -1))
-        window.window?.navigationBarColor = Theme.BG
+        window.window?.let { w ->
+            w.navigationBarColor = Theme.BG
+            // dark navigation buttons on light skins
+            @Suppress("DEPRECATION")
+            val flags = w.decorView.systemUiVisibility
+            @Suppress("DEPRECATION")
+            w.decorView.systemUiVisibility = if (Theme.dark || Theme.signature == "classic") flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+                else flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
         applyLayout()
         return root
     }

@@ -50,17 +50,23 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
     fun finish(mode: Mode) {
         val r = recorder ?: return
         recorder = null
-        val pcm = r.stop()
-        if (pcm.size < 16000 * 2 / 3) { // < ~0.3 s
+        val raw = r.stop()
+        if (raw.size < 16000 * 2 / 3) { // < ~0.3 s
             ui.onStatus(null)
             ui.onError("说话时间太短")
+            return
+        }
+        val pcm = Vad.trim(raw)
+        if (pcm == null) {
+            ui.onStatus(null)
+            ui.onError("没有听到声音")
             return
         }
         val id = ++job
         ui.onStatus("识别中…")
         worker.execute {
             try {
-                val text = recognize(pcm)
+                val text = Vad.clean(recognize(pcm))
                 if (id != job) return@execute
                 if (text.isBlank()) { post(id) { ui.onStatus(null); ui.onError("没有识别到内容") }; return@execute }
                 val out = when (mode) {

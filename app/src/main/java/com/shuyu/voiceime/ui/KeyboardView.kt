@@ -202,7 +202,7 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
         c.drawRoundRect(bubbleRect, dp(10f), dp(10f), paint)
         var label = if (k.type == KeyType.T9) k.label else k.label
         if (label.length == 1 && label[0].isLetter() && shiftState > 0) label = label.uppercase()
-        paint.color = Theme.TEXT; paint.textAlign = Paint.Align.CENTER; paint.typeface = Typeface.DEFAULT
+        paint.color = Theme.LETTER; paint.textAlign = Paint.Align.CENTER; paint.typeface = Typeface.DEFAULT
         paint.textSize = if (label.length > 2) dp(20f) else dp(30f)
         c.drawText(label, bubbleRect.centerX(), bubbleRect.centerY() + paint.textSize * 0.35f, paint)
         c.restore()
@@ -238,6 +238,8 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
         drawContent(c, k, r, fg, inLeft)
         return level > 0f && k !in pressed
     }
+
+    private fun accent(k: Key) = k.type == KeyType.ENTER && !Theme.flat
 
     private fun drawContent(c: Canvas, k: Key, r: RectF, fg: Int, inLeft: Boolean) {
         val cx = r.centerX()
@@ -295,7 +297,8 @@ class KeyboardView(ctx: Context, private val listener: Listener) : View(ctx) {
         }
         var label = k.label
         if (k.type == KeyType.TEXT && label.length == 1 && label[0].isLetter() && shiftState > 0) label = label.uppercase()
-        paint.color = if (k.small) Theme.HINT else fg
+        val letter = !inLeft && (k.type == KeyType.T9 || (k.type == KeyType.TEXT && (Theme.flat || k !in fnKeys)))
+        paint.color = when { k.small -> Theme.HINT; accent(k) -> fg; letter -> Theme.LETTER; else -> fg }
         paint.textAlign = Paint.Align.CENTER
         paint.textSize = when {
             inLeft -> dp(17f)

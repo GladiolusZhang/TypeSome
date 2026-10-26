@@ -249,8 +249,9 @@ class SettingsActivity : Activity() {
             Core.reloadContacts(this)
         }
         kb.addView(TextView(this).apply { text = "皮肤"; setTextColor(Color.DKGRAY); setPadding(0, px(8f), 0, 0) })
-        val skins = listOf("auto" to "跟随系统", "light" to "浅色", "dark" to "深色", "classic" to "经典灰")
-        val skinGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        val skins = listOf("seamless" to "无缝（白天纯白，夜间灰色）", "white" to "无缝纯白", "classic" to "无缝经典灰",
+            "auto" to "圆角按键（跟随系统深浅色）", "light" to "圆角浅色", "dark" to "圆角深色")
+        val skinGroup = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
         for ((key, name) in skins) skinGroup.addView(RadioButton(this).apply {
             text = name; id = View.generateViewId(); tag = key; isChecked = prefs.skin == key
         })

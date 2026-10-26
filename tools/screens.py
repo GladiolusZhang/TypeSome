@@ -9,7 +9,7 @@ from PIL import Image
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else "shots"
 os.makedirs(OUT, exist_ok=True)
-GRAY = (228, 230, 235)  # light skin background
+GRAY = (176, 176, 176)  # default skin at night (classic gray)
 
 def adb(*a, out=None):
     if out:
@@ -56,6 +56,8 @@ d = density()
 subprocess.run(["adb", "shell", "settings", "put", "global", "hide_error_dialogs", "1"])
 subprocess.run(["adb", "shell", "am", "broadcast", "-a", "android.intent.action.CLOSE_SYSTEM_DIALOGS"])
 time.sleep(2)
+adb("cmd", "uimode", "night", "yes")
+time.sleep(3)
 adb("am", "start", "-n", "com.shuyu.voiceime/.SettingsActivity", "--ez", "demo", "true")
 time.sleep(5)
 first = shot("01_pinyin")
@@ -106,9 +108,9 @@ tap(weights[0] / 2 / sum(weights) * W, row_y(3)); shot("09_numbers")
 tap(W * 0.92, row_y(3))
 tap((sum(weights[:5]) + weights[5] / 2) / sum(weights) * W, row_y(3)); shot("10_symbols")
 
-# dark skin (follows the system)
+# daytime: pure white
 adb("input", "keyevent", "KEYCODE_BACK")
-adb("cmd", "uimode", "night", "yes")
+adb("cmd", "uimode", "night", "no")
 time.sleep(3)
 adb("am", "force-stop", "com.shuyu.voiceime")
 time.sleep(2)
@@ -116,5 +118,5 @@ adb("ime", "set", "com.shuyu.voiceime/.ImeService")
 time.sleep(2)
 adb("am", "start", "-n", "com.shuyu.voiceime/.SettingsActivity", "--ez", "demo", "true")
 time.sleep(5)
-shot("11_dark")
-hold_and_shot(space_x, space_y, space_x, space_y, 3500, 2.0, "12_dark_voice")
+shot("11_day")
+hold_and_shot(space_x, space_y, space_x, space_y, 3500, 2.0, "12_day_voice")
