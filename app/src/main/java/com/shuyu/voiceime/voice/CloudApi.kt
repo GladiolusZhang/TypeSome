@@ -23,12 +23,14 @@ object CloudApi {
 
     private fun url(base: String, path: String) = base.trimEnd('/') + path
 
-    fun transcribe(baseUrl: String, apiKey: String, model: String, wav: ByteArray, language: String): String {
+    fun transcribe(baseUrl: String, apiKey: String, model: String, wav: ByteArray, language: String, hint: String = ""): String {
         if (apiKey.isBlank()) throw IOException("未填写语音识别 API Key")
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("model", model)
             .addFormDataPart("file", "audio.wav", wav.toRequestBody("audio/wav".toMediaType()))
             .apply { if (language.isNotBlank()) addFormDataPart("language", language) }
+            // Whisper models take a text prompt that biases spelling of names and terms
+            .apply { if (hint.isNotBlank() && "whisper" in model.lowercase()) addFormDataPart("prompt", hint) }
             .build()
         val req = Request.Builder().url(url(baseUrl, "/audio/transcriptions"))
             .header("Authorization", "Bearer $apiKey").post(body).build()

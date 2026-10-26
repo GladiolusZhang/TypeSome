@@ -66,18 +66,26 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
         ui.onStatus("识别中…")
         worker.execute {
             try {
-                val text = Vad.clean(recognize(pcm))
+                val vocab = Vocabulary(prefs.vocabulary)
+                val text = vocab.apply(Vad.clean(recognize(pcm, vocab)))
                 if (id != job) return@execute
                 if (text.isBlank()) { post(id) { ui.onStatus(null); ui.onError("没有识别到内容") }; return@execute }
                 val out = when (mode) {
-                    Mode.PLAIN -> text
+                    Mode.PLAIN -> if (!prefs.plainCorrect || prefs.effectiveLlmKey.isBlank()) text else {
+                        post(id) { ui.onStatus("纠错中…") }
+                        // only a proofreading pass: if the model is unreachable, the raw text is still fine
+                        try {
+                            vocab.apply(CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel,
+                                prefs.correctPrompt + vocab.promptSection(), CloudApi.wrap(text), prefs.noThinking)).ifBlank { text }
+                        } catch (_: Exception) { text }
+                    }
                     Mode.SUMMARY -> {
                         post(id) { ui.onStatus("AI 整理中…") }
-                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt, CloudApi.wrap(text), prefs.noThinking)
+                        CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, prefs.summaryPrompt + vocab.promptSection(), CloudApi.wrap(text), prefs.noThinking)
                     }
                     Mode.TRANSLATE -> {
                         post(id) { ui.onStatus("翻译成${prefs.targetLanguage}…") }
-                        val sys = prefs.translatePrompt.replace("{lang}", prefs.targetLanguage)
+                        val sys = prefs.translatePrompt.replace("{lang}", prefs.targetLanguage) + vocab.promptSection()
                         CloudApi.chat(prefs.llmBaseUrl, prefs.effectiveLlmKey, prefs.llmModel, sys, CloudApi.wrap(text), prefs.noThinking)
                     }
                 }
@@ -88,10 +96,10 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
         }
     }
 
-    private fun recognize(pcm: ByteArray): String {
+    private fun recognize(pcm: ByteArray, vocab: Vocabulary): String {
         val offline = prefs.asrEngine == "offline" && prefs.offlineModelId.isNotEmpty()
         return if (offline) OfflineAsr.transcribe(ctx, prefs.offlineModelId, pcm)
-        else CloudApi.transcribe(prefs.asrBaseUrl, prefs.asrApiKey, prefs.asrModel, Recorder.toWav(pcm), prefs.asrLanguage)
+        else CloudApi.transcribe(prefs.asrBaseUrl, prefs.asrApiKey, prefs.asrModel, Recorder.toWav(pcm), prefs.asrLanguage, vocab.asHint())
     }
 
     private fun post(id: Int, block: () -> Unit) = main.post { if (id == job) block() }
