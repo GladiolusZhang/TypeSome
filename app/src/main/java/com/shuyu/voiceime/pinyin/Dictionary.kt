@@ -217,8 +217,7 @@ class Dictionary(
         userBySig[s]?.forEach { u ->
             val syl = u.key.split('\'')
             if (syl.size == tokens.size && matches(syl.toTypedArray(), tokens, fuzzy)) {
-                val boost = if (u.source == SRC_CONTACT) 2_000_000L else 300_000L
-                out.add(Hit(u.word, boost + u.count * 200_000L, tokens.size, true))
+                out.add(Hit(u.word, userScore(u), tokens.size, true))
             }
         }
         return out
@@ -242,10 +241,16 @@ class Dictionary(
         for (u in userWords.values) {
             if (u.key.isEmpty()) continue
             val syl = u.key.split('\'').toTypedArray()
-            if (ok(syl)) out.add(Hit(u.word, (if (u.source == SRC_CONTACT) 2_000_000L else 300_000L) + u.count * 200_000L, tokens.size, true))
+            if (ok(syl)) out.add(Hit(u.word, userScore(u), tokens.size, true))
         }
         return out
     }
+
+    /**
+     * Weight of a user word: what counts is how often it was picked. A contact name starts about
+     * level with a common word, so words picked more often than the name come first.
+     */
+    private fun userScore(u: UserWord): Long = (if (u.source == SRC_CONTACT) 250_000L else 300_000L) + u.count * 200_000L
 
     private fun matches(syl: Array<String>, tokens: List<Syllables.Token>, fuzzy: Boolean): Boolean {
         for (i in tokens.indices) {
@@ -324,7 +329,12 @@ class Dictionary(
         if (word.isEmpty()) return
         val k = "$key\t$word"
         val u = userWords[k]
-        if (u != null) u.count++ else addUser(UserWord(key, word, 1))
+        when {
+            u == null -> addUser(UserWord(key, word, 1))
+            // a picked contact name becomes an ordinary learned word, so its count is kept
+            u.source == SRC_CONTACT -> { userBySig[sig(key.split('\'').toTypedArray())]?.remove(u); addUser(UserWord(key, word, 1)) }
+            else -> u.count++
+        }
         scheduleSave()
     }
 
@@ -358,6 +368,7 @@ class Dictionary(
         }
         for (n in names) {
             val key = pinyinOf(n) ?: continue
+            if (userWords.containsKey("$key\t$n")) continue // already learned from use
             addUser(UserWord(key, n, 0, SRC_CONTACT))
         }
     }
