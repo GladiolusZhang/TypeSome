@@ -88,7 +88,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         prefs = Prefs(this)
         dict = Core.dictionary(this)
         en = Core.english(this)
-        engine = PinyinEngine(dict)
+        engine = PinyinEngine(dict, en)
         voice = VoiceController(this, this)
         chinese = prefs.chineseMode
         cnLayout = prefs.sp.getString("cn_layout", "pinyin") ?: "pinyin"

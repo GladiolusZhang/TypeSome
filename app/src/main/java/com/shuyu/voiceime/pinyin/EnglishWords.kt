@@ -91,6 +91,27 @@ class EnglishWords(
         return (lead.map { words[it] } + completions + tail.map { words[it] }).distinct().take(limit)
     }
 
+    /**
+     * English words for letters typed in Chinese mode ("hello", "github"): the word itself when it
+     * is a common one, then up to [more] common completions. Rare words never show up here.
+     */
+    fun forPinyin(typed: String, more: Int): List<String> {
+        if (!loaded || typed.length < 2) return emptyList()
+        val p = key(typed)
+        fun common(i: Int) = freqs[i] >= COMMON || (user[words[i]] ?: 0) >= 2
+        val out = ArrayList<String>()
+        byKey[p]?.let { if (common(it) || (user[words[it]] ?: 0) >= 1) out.add(words[it]) }
+        if (more > 0) {
+            val found = ArrayList<Int>()
+            var i = keys.binarySearch(p).let { if (it < 0) -it - 1 else it }
+            var scanned = 0
+            while (i < keys.size && keys[i].startsWith(p) && scanned++ < 5000) { if (keys[i] != p && common(i)) found.add(i); i++ }
+            found.sortedByDescending { score(it) }.take(more).mapTo(out) { words[it] }
+            for ((w, c) in user) if (c >= 2 && out.size < more + 1 && key(w).startsWith(p) && w !in out && !byKey.containsKey(key(w))) out.add(w)
+        }
+        return out
+    }
+
     /** Words that often follow [word] ("thank" → you). */
     fun nextWords(word: String, limit: Int = 12): List<String> {
         if (!loaded) return emptyList()
@@ -129,6 +150,8 @@ class EnglishWords(
 
     companion object {
         private const val USER_WEIGHT = 50_000.0
+        /** About the 13,000 most frequent words. */
+        private const val COMMON = 1500
         private const val MAX_USER = 3000
         fun key(w: String) = w.lowercase().replace("'", "")
         private fun asset(ctx: Context, name: String): () -> InputStream? =
@@ -137,6 +160,7 @@ class EnglishWords(
         /** Gives a suggestion the case of what was typed: "Hel" → "Hello", "HEL" → "HELLO", and always "I". */
         fun matchCase(word: String, typed: String): String = when {
             word == "i" || word.startsWith("i'") -> "I" + word.substring(1)
+            word.any { it.isUpperCase() } -> word // GitHub, API: their own spelling
             typed.length > 1 && typed.all { !it.isLetter() || it.isUpperCase() } -> word.uppercase()
             typed.firstOrNull()?.isUpperCase() == true -> word.replaceFirstChar { it.uppercase() }
             else -> word

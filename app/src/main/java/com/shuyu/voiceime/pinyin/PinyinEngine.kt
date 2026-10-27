@@ -6,7 +6,7 @@ package com.shuyu.voiceime.pinyin
  * cursor  = insertion point inside raw (lets the user fix a typo in the middle)
  * picked  = words already chosen for the leading syllables (partial selection)
  */
-class PinyinEngine(private val dict: Dictionary) {
+class PinyinEngine(private val dict: Dictionary, private val en: EnglishWords? = null) {
 
     /** [key] is set when the candidate reads the letters differently from [tokens] (fan'gan vs fang'an). */
     data class Candidate(val text: String, val tokenCount: Int, val label: String? = null, val key: String? = null)
@@ -166,6 +166,7 @@ class PinyinEngine(private val dict: Dictionary) {
     }
 
     private fun learnSelection(full: String, key: String, c: Candidate) {
+        if (c.label == EN && learning) en?.learn(c.text)
         if (c.label != null || !learning) return
         if (full.any { it.code < 0x3400 }) return
         if (key.isNotEmpty() && key.count { it == '\'' } + 1 == full.length) dict.learn(full, key)
@@ -228,6 +229,7 @@ class PinyinEngine(private val dict: Dictionary) {
             levels.add(hits.distinctBy { it.word }.sortedByDescending { rank(it.score, it.word) })
         }
         val fullHits = levels[0]
+        var sentenceScore: Double? = null
         if (n >= 2) {
             // a guessed sentence goes first when no single word covers the input, or when it is
             // clearly more likely than the best such word (wo'xiang'qu'shang'hai → 我想去上海)
@@ -236,6 +238,7 @@ class PinyinEngine(private val dict: Dictionary) {
                 val best = fullHits.firstOrNull()
                 if (best == null || sentence.text != best.word && n >= 3 && sentence.score > rank(best.score, best.word) + SENTENCE_MARGIN) {
                     out.add(Candidate(sentence.text, n, key = sentence.key)); seen.add(sentence.text)
+                    sentenceScore = sentence.score
                 }
             }
         }
@@ -249,7 +252,75 @@ class PinyinEngine(private val dict: Dictionary) {
             }
         }
         if (out.isEmpty()) out.add(Candidate(raw.toString().replace("'", ""), n))
+        if (!t9) {
+            val typedBest = fullHits.firstOrNull()?.let { rank(it.score, it.word) }
+            typoFix(typedBest, out)?.let { (fix, score) ->
+                // second place, so it never pushes away what was typed; first only when the letters as
+                // typed make no word at all, just a strung-together guess far less likely than the fix
+                val guessOnly = typedBest == null && (out[0].text.any { it in 'a'..'z' } ||
+                    sentenceScore != null && score > sentenceScore!! + FIRST_MARGIN)
+                val at = if (guessOnly) 0 else 1
+                out.removeAll { it.text == fix.text }
+                out.add(minOf(at, out.size), fix)
+            }
+            addEnglish(out)
+        }
         return out
+    }
+
+    /**
+     * Common English words among the candidates for letters typed in Chinese mode, for the odd
+     * "hello" or "GitHub" in a Chinese sentence. When the letters are also plain pinyin (men, line)
+     * the English word waits further back.
+     */
+    private fun addEnglish(out: ArrayList<Candidate>) {
+        val e = en ?: return
+        if (picked.isNotEmpty() || raw.contains('\'')) return
+        val typed = raw.toString()
+        val pinyin = tokens.all { it.complete }
+        val words = e.forPinyin(typed, more = if (pinyin || typed.length < 3) 0 else 1)
+        if (words.isEmpty()) return
+        var at = if (pinyin) 4 else 1
+        for (w in words) {
+            if (out.any { it.text == w }) continue
+            out.add(minOf(at++, out.size), Candidate(w, tokens.size, EN))
+        }
+    }
+
+    /**
+     * One likely fix for a slip onto a neighbouring key or two swapped letters (nihap → 你好,
+     * zhongugo → 中国), offered only when it gives a common word that is clearly more likely than
+     * anything the letters as typed give.
+     */
+    private fun typoFix(typedBest: Double?, out: List<Candidate>): Pair<Candidate, Double>? {
+        if (!autoCorrect) return null
+        val s = letters
+        if (s.length < 4 || s.length > 16 || '\'' in s) return null
+        // what was typed already reads as a word more common than any fix could be
+        if (typedBest != null && typedBest + FIX_MARGIN > dict.logUni(MAX_WORD_FREQ)) return null
+        var best: Candidate? = null
+        var bestScore = Double.NEGATIVE_INFINITY
+        for (v in variants(s)) {
+            val toks = Syllables.segment(v)
+            if (toks.size < 2 || toks.dropLast(1).any { !it.complete }) continue
+            val hit = dict.lookup(toks, fuzzy).maxByOrNull { it.score } ?: continue
+            val score = dict.logUni(hit.score)
+            if (score > bestScore) {
+                bestScore = score
+                best = Candidate(hit.word, tokens.size, key = if (toks.last().complete) toks.joinToString("'") { it.text } else "")
+            }
+        }
+        val fix = best ?: return null
+        if (bestScore < dict.logUni(MIN_FIX_FREQ)) return null
+        if (typedBest != null && bestScore < typedBest + FIX_MARGIN) return null
+        if (out.take(3).any { it.text == fix.text }) return null
+        return fix to bestScore
+    }
+
+    /** The letters with one key swapped for a neighbour, or two adjacent letters swapped. */
+    private fun variants(s: String): Sequence<String> = sequence {
+        for (i in s.indices) for (c in NEIGHBOURS[s[i]] ?: "") yield(s.substring(0, i) + c + s.substring(i + 1))
+        for (i in 0 until s.length - 1) if (s[i] != s[i + 1]) yield(s.substring(0, i) + s[i + 1] + s[i] + s.substring(i + 2))
     }
 
     /** A word over letters [from, to); [key] is set only for readings that differ from [tokens]. */
@@ -390,7 +461,27 @@ class PinyinEngine(private val dict: Dictionary) {
 
     private class State(val score: Double, val word: String?, val from: State?, val edge: Edge?)
 
-    private companion object {
+    companion object {
+        /** Label of English candidates offered in Chinese mode. */
+        const val EN = "en"
+        private const val MIN_FIX_FREQ = 20_000L
+        private const val MAX_WORD_FREQ = 2_000_000L
+        /** A fix must be this much (log) more likely than the best reading of what was typed. */
+        private const val FIX_MARGIN = 2.3
+        private const val FIRST_MARGIN = 6.0
+
+        /** Keys next to each letter on the QWERTY layout: left/right, and the touching keys above and below. */
+        private val NEIGHBOURS: Map<Char, String> = run {
+            val rows = listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
+            val offset = listOf(0.5, 1.0, 1.95)
+            val pos = HashMap<Char, Pair<Int, Double>>()
+            for ((r, row) in rows.withIndex()) for ((i, c) in row.withIndex()) pos[c] = r to i + offset[r]
+            pos.mapValues { (c, p) ->
+                pos.filter { (d, q) -> d != c && (q.first == p.first && Math.abs(q.second - p.second) < 1.1 ||
+                    Math.abs(q.first - p.first) == 1 && Math.abs(q.second - p.second) < 0.6) }.keys.joinToString("")
+            }
+        }
+
         const val BEAM = 8
         const val SPAN_WORDS = 6
         const val SENTENCE_MARGIN = 3.0

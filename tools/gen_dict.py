@@ -73,6 +73,14 @@ FRAGMENTS = {"didn", "doesn", "isn", "wasn", "aren", "weren", "hasn", "couldn", 
              "re", "ll", "ve", "dont", "im", "didnt", "cant", "doesnt", "isnt", "wasnt", "wont", "youre",
              "thats", "whats", "ive", "theyre", "lets", "arent", "couldnt", "wouldnt", "shouldnt", "havent"}
 
+#s a subtitle corpus barely has but people type all the time, in their usual spelling.
+TECH = """OK app API AI LLM GPT ChatGPT OpenAI DeepSeek Claude Gemini Copilot GitHub GitLab git commit push pull merge
+branch bug debug demo feature deadline DDL PPT PDF email Gmail iPhone iPad iOS Android MacBook
+Linux Ubuntu Docker Kubernetes Python Java JavaScript TypeScript Kotlin Golang SQL MySQL HTML CSS JSON
+YAML URL HTTP HTTPS API SDK CPU GPU NPU RAM SSD USB WiFi Bluetooth VPN NVIDIA CUDA PyTorch TensorFlow transformer token
+prompt agent RAG embedding dataset benchmark paper arXiv LaTeX Markdown YouTube Twitter TikTok
+Google Microsoft Tesla Netflix Spotify UI UX KPI OKR CEO CTO HR PM IPO ETF GDP CPI PMI""".split()
+
 def english(out, cache):
     """English words by frequency (hermitdave/FrequencyWords, CC BY-SA 4.0, from OpenSubtitles):
     one "word count" per line, best first."""
@@ -92,6 +100,10 @@ def english(out, cache):
         if base in counts: counts[word] = int(counts[base] * share)
     for w in FRAGMENTS: counts.pop(w, None)
     counts.pop("don", None)
+    for w in TECH:
+        # the app matches case-insensitively and shows this spelling
+        c = max(counts.pop(w.lower(), 0), 5000)
+        counts[w] = c
     best = sorted(counts.items(), key=lambda x: -x[1])[:EN_WORDS]
     with open(out, "w", encoding="utf-8") as o:
         for w, c in best: o.write(f"{w} {c}\n")
