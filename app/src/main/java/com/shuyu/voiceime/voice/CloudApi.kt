@@ -45,9 +45,10 @@ object CloudApi {
      * Sends the recording itself, with the system prompt, to a chat model that understands audio
      * (Qwen-Omni on DashScope: an `input_audio` part with a `data:;base64,` URL, streamed replies).
      */
-    fun chatAudio(baseUrl: String, apiKey: String, model: String, system: String, wav: ByteArray, instruction: String, noThinking: Boolean = true): String {
+    fun chatAudio(baseUrl: String, apiKey: String, model: String, system: String, audioBytes: ByteArray, format: String,
+                  instruction: String, noThinking: Boolean = true): String {
         if (apiKey.isBlank()) throw IOException("未填写多模态大模型 API Key")
-        val audio = "data:;base64," + android.util.Base64.encodeToString(wav, android.util.Base64.NO_WRAP)
+        val audio = "data:;base64," + android.util.Base64.encodeToString(audioBytes, android.util.Base64.NO_WRAP)
         val json = JSONObject()
             .put("model", model)
             .put("stream", true)
@@ -56,9 +57,14 @@ object CloudApi {
                 .put(JSONObject().put("role", "system").put("content", system))
                 .put(JSONObject().put("role", "user").put("content", JSONArray()
                     .put(JSONObject().put("type", "input_audio")
-                        .put("input_audio", JSONObject().put("data", audio).put("format", "wav")))
+                        .put("input_audio", JSONObject().put("data", audio).put("format", format)))
                     .put(JSONObject().put("type", "text").put("text", instruction)))))
-        if (noThinking && "dashscope" in baseUrl.lowercase()) json.put("enable_thinking", false)
+        if (noThinking && "dashscope" in baseUrl.lowercase()) {
+            // Qwen3.8-Omni thinks by default (reasoning_effort xhigh), which makes a short reply take
+            // many seconds; older Omni models use enable_thinking instead
+            if (Regex("qwen3\\.[6-9]|qwen[4-9]").containsMatchIn(model.lowercase())) json.put("reasoning_effort", "none")
+            else json.put("enable_thinking", false)
+        }
         val req = Request.Builder().url(url(baseUrl, "/chat/completions"))
             .header("Authorization", "Bearer $apiKey")
             .post(json.toString().toRequestBody("application/json".toMediaType())).build()
@@ -78,6 +84,14 @@ object CloudApi {
             }
             return out.toString().replace(Regex("(?s)<think>.*?</think>"), "").trim()
         }
+    }
+
+    /** Opens the connection (DNS, TLS) while the user is still talking, so the real request starts at once. */
+    fun warmUp(baseUrl: String, apiKey: String) {
+        try {
+            val req = Request.Builder().url(url(baseUrl, "/models")).header("Authorization", "Bearer $apiKey").head().build()
+            http.newCall(req).execute().close()
+        } catch (_: Exception) {}
     }
 
     fun chat(baseUrl: String, apiKey: String, model: String, system: String, user: String, noThinking: Boolean = true): String {

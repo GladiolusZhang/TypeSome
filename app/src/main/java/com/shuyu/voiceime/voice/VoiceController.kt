@@ -34,6 +34,11 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
             return false
         }
         recorder = r
+        // the audio model may be next: connect now rather than after the user lets go
+        if (prefs.audioLlm && prefs.effectiveAudioLlmKey.isNotBlank()) {
+            val base = prefs.audioLlmBaseUrl; val key = prefs.effectiveAudioLlmKey
+            Thread { CloudApi.warmUp(base, key) }.start()
+        }
         // Warm up the offline model while the user is still talking.
         if (prefs.asrEngine == "offline" && prefs.offlineModelId.isNotEmpty()) {
             worker.execute { try { OfflineAsr.ensure(ctx, prefs.offlineModelId) } catch (_: Exception) {} }
@@ -121,8 +126,14 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
         val modeBlock = if (mode == Mode.TRANSLATE) prefs.translatePrompt.replace("{lang}", prefs.targetLanguage) else prefs.polishPrompt
         post(id) { ui.onStatus(if (mode == Mode.TRANSLATE) "翻译成${prefs.targetLanguage}…" else "AI 整理中…") }
         val system = Prompts.build(prefs.corePrompt, prefs.userProfile, vocab, modeBlock, tone)
-        val out = CloudApi.chatAudio(prefs.audioLlmBaseUrl, prefs.effectiveAudioLlmKey, prefs.audioLlmModel, system,
-            Recorder.toWav(pcm), Prompts.AUDIO_INSTRUCTION, prefs.noThinking)
+        fun send(bytes: ByteArray, format: String) = CloudApi.chatAudio(prefs.audioLlmBaseUrl, prefs.effectiveAudioLlmKey,
+            prefs.audioLlmModel, system, bytes, format, Prompts.AUDIO_INSTRUCTION, prefs.noThinking)
+        // AAC is a tenth of the WAV size; if this model or device won't take it, WAV still works
+        val aac = Aac.encode(pcm)
+        val out = if (aac == null || aac.isEmpty()) send(Recorder.toWav(pcm), "wav")
+            else try { send(aac, "aac") } catch (e: java.io.IOException) {
+                if (e.message?.contains(" 4") == true) send(Recorder.toWav(pcm), "wav") else throw e
+            }
         return if (mode == Mode.TRANSLATE) out else vocab.apply(out)
     }
 
