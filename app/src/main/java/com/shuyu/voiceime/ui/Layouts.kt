@@ -26,9 +26,10 @@ object Layouts {
 
     fun qwerty(chinese: Boolean): KbLayout {
         val r1 = "qwertyuiop".mapIndexed { i, c -> t(c.toString(), ((i + 1) % 10).toString()) }
-        val h2 = listOf("~", "@", "#", "$", "%", "&", "*", "(", ")")
+        // in Chinese mode these type full-width punctuation, so show that
+        val h2 = if (chinese) listOf("~", "@", "#", "$", "%", "&", "*", "（", "）") else listOf("~", "@", "#", "$", "%", "&", "*", "(", ")")
         val r2 = "asdfghjkl".mapIndexed { i, c -> t(c.toString(), h2[i]) }
-        val h3 = listOf("'", "/", "-", "_", ":", ";", "?")
+        val h3 = if (chinese) listOf("'", "/", "-", "_", "：", "；", "？") else listOf("'", "/", "-", "_", ":", ";", "?")
         val r3 = listOf(Key(KeyType.SHIFT, icon = Icon.SHIFT, weight = 1.45f)) +
             "zxcvbnm".mapIndexed { i, c -> t(c.toString(), h3[i]) } +
             Key(KeyType.BACKSPACE, icon = Icon.BACKSPACE, weight = 1.45f)

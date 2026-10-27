@@ -73,6 +73,7 @@ class Prefs(context: Context) {
     val contactsEnabled: Boolean get() = sp.getBoolean("contacts", false)
     val otpEnabled: Boolean get() = sp.getBoolean("otp", true)
     val calculator: Boolean get() = sp.getBoolean("calculator", true)
+    val emojiWords: Boolean get() = sp.getBoolean("emoji_words", true)
     val hideOnOutsideTap: Boolean get() = sp.getBoolean("hide_outside", true)
     val keyboardHeightPercent: Int get() = sp.getInt("kb_height", 100)
     /** "seamless" (flat; white by day, gray at night) | "white" | "classic" | "auto" | "light" | "dark" */

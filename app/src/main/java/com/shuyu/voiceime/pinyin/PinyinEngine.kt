@@ -16,6 +16,8 @@ class PinyinEngine(private val dict: Dictionary, private val en: EnglishWords? =
     var raw = StringBuilder(); private set
     var cursor = 0; private set
     private val picked = ArrayList<Pick>()
+    /** Emoji for a word (敬礼 → 🫡), offered right after it; null turns emoji suggestions off. */
+    var emojiFor: ((String) -> List<String>)? = null
     /** Text before the cursor when composing started: its last word steers the ranking. */
     var context: String = ""
     var fuzzy = false
@@ -265,7 +267,23 @@ class PinyinEngine(private val dict: Dictionary, private val en: EnglishWords? =
             }
             addEnglish(out)
         }
+        addEmoji(out)
         return out
+    }
+
+    /** Up to two emoji for the first leading candidate that names one, placed just behind it. */
+    private fun addEmoji(out: ArrayList<Candidate>) {
+        val find = emojiFor ?: return
+        if (picked.isNotEmpty()) return
+        for (i in 0 until minOf(3, out.size)) {
+            val c = out[i]
+            if (c.tokenCount < tokens.size || c.label != null) continue
+            val emoji = find(c.text).filter { e -> out.none { it.text == e } }.take(2)
+            if (emoji.isEmpty()) continue
+            var at = maxOf(i + 1, 2)
+            for (e in emoji) out.add(minOf(at++, out.size), Candidate(e, tokens.size, EMOJI))
+            return
+        }
     }
 
     /**
@@ -464,6 +482,8 @@ class PinyinEngine(private val dict: Dictionary, private val en: EnglishWords? =
     companion object {
         /** Label of English candidates offered in Chinese mode. */
         const val EN = "en"
+        /** Label of emoji candidates. */
+        const val EMOJI = "emoji"
         private const val MIN_FIX_FREQ = 20_000L
         private const val MAX_WORD_FREQ = 2_000_000L
         /** A fix must be this much (log) more likely than the best reading of what was typed. */

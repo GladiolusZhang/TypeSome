@@ -276,6 +276,7 @@ class SettingsActivity : Activity() {
         switch(kb, "模糊音（z=zh、c=ch、s=sh、n=l、an=ang、en=eng、in=ing）", "fuzzy_pinyin", false)
         switch(kb, "拼音自动纠错（如 ign→ing）", "auto_correct", true)
         switch(kb, "联想下一个词", "associate", true)
+        switch(kb, "打出词语时推荐表情（如 敬礼 → 🫡）", "emoji_words", true)
         switch(kb, "记住我选过的词（用户词库）", "learn_words", true)
         switch(kb, "算式自动计算（输入 1+1 候选栏出 2）", "calculator", true)
         switch(kb, "验证码快捷填充（需要短信权限，或复制验证码短信）", "otp", true)

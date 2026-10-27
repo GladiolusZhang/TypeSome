@@ -23,6 +23,7 @@ import com.shuyu.voiceime.data.Otp
 import com.shuyu.voiceime.input.Handwriting
 import com.shuyu.voiceime.ui.HandwritingView
 import com.shuyu.voiceime.ui.VoiceOverlay
+import com.shuyu.voiceime.data.EmojiWords
 import com.shuyu.voiceime.pinyin.Dictionary
 import com.shuyu.voiceime.pinyin.EnglishWords
 import com.shuyu.voiceime.pinyin.PinyinEngine
@@ -89,6 +90,8 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         dict = Core.dictionary(this)
         en = Core.english(this)
         engine = PinyinEngine(dict, en)
+        Core.bg.execute { EmojiWords.load(this) }
+        engine.emojiFor = { w -> if (prefs.emojiWords) EmojiWords.forWord(w) else emptyList() }
         voice = VoiceController(this, this)
         chinese = prefs.chineseMode
         cnLayout = prefs.sp.getString("cn_layout", "pinyin") ?: "pinyin"
@@ -406,7 +409,9 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         val typed = englishWordBefore()
         val list = if (typed == null || !prefs.associate) emptyList() else en.suggest(typed)
         if (list.isEmpty()) { if (smart == Smart.WORDS || smart == Smart.ASSOC) clearSmart(); return }
-        showSmart(Smart.WORDS, list.map { w ->
+        // a word that names an emoji (love, fire) also offers it, in second place
+        val emoji = if (prefs.emojiWords) EmojiWords.forWord(typed!!).take(2) else emptyList()
+        val items = list.map { w ->
             val shown = EnglishWords.matchCase(w, typed!!)
             TopBar.Suggestion(shown) to {
                 val ic = currentInputConnection
@@ -418,7 +423,14 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
                 }
                 afterEnglishWord(shown)
             }
+        }.toMutableList()
+        for ((k, e) in emoji.withIndex()) items.add(minOf(1 + k, items.size), TopBar.Suggestion(e) to {
+            currentInputConnection?.let { ic ->
+                ic.beginBatchEdit(); ic.deleteSurroundingText(typed!!.length, 0); ic.commitText(e, 1); ic.endBatchEdit()
+            }
+            remember("recent_emoji", e, EMOJI_HISTORY)
         })
+        showSmart(Smart.WORDS, items)
     }
 
     /** A word was finished: count it and offer the words that usually follow. */
@@ -514,6 +526,8 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             return
         }
         val context = engine.context
+        val picked = engine.candidates.getOrNull(index)
+        if (picked?.label == PinyinEngine.EMOJI) remember("recent_emoji", picked.text, EMOJI_HISTORY)
         val done = engine.select(index)
         if (done != null) {
             if (engine.learning) dict.learnNext(context, done)
