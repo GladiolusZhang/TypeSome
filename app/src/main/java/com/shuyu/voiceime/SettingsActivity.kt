@@ -214,8 +214,17 @@ class SettingsActivity : Activity() {
             })
         })
 
+        // ---- audio LLM
+        val omni = section("智能整理 / 翻译：直接听录音")
+        note(omni, "把整段录音和提示词一起发给能听懂语音的大模型（默认阿里百炼的千问 Omni），不先转文字，一步出结果，通常更准也更便宜。录音超过约 3 分钟、没填 Key 或调用失败时，自动改用下面「大模型」的先识别再整理。")
+        switch(omni, "直接把录音发给多模态大模型", "audio_llm", true)
+        field(omni, "接口地址", prefs.audioLlmBaseUrl, "https://dashscope.aliyuncs.com/compatible-mode/v1") { prefs.audioLlmBaseUrl = it.trim() }
+        field(omni, "API Key（可留空）", prefs.audioLlmApiKey, "留空 = 沿用下面或语音识别里同一服务商的 Key", password = true) { prefs.audioLlmApiKey = it.trim() }
+        field(omni, "模型", prefs.audioLlmModel, "qwen3.8-omni-flash") { prefs.audioLlmModel = it.trim() }
+        note(omni, "阿里百炼的 Key 在 bailian.console.aliyun.com 获取；国际站接口地址是 https://dashscope-intl.aliyuncs.com/compatible-mode/v1 。")
+
         // ---- LLM
-        val llm = section("大模型（智能整理 / 翻译）")
+        val llm = section("大模型（语音输入纠错；智能整理 / 翻译的备用）")
         note(llm, "使用 OpenAI 兼容的 /chat/completions 接口。Key 留空时自动沿用上面语音识别的 Key（同一家服务商时很方便）。")
         field(llm, "接口地址", prefs.llmBaseUrl, "https://api.siliconflow.cn/v1") { prefs.llmBaseUrl = it }
         field(llm, "API Key（可留空）", prefs.llmApiKey, "留空 = 使用语音识别的 Key", password = true) { prefs.llmApiKey = it }
@@ -317,7 +326,7 @@ class SettingsActivity : Activity() {
 
         // ---- about
         val about = section("关于")
-        note(about, "版本 ${packageManager.getPackageInfo(packageName, 0).versionName}\n拼音词库基于 jieba 词频与 pypinyin 注音生成；离线识别使用 sherpa-onnx。")
+        note(about, "版本 ${packageManager.getPackageInfo(packageName, 0).versionName}\n拼音词库来自雾凇拼音（rime-ice），联想数据来自 libpinyin 与 OpenSubtitles、LCCC 语料；离线识别使用 sherpa-onnx。")
     }
 
     private fun updateEngineBoxes() {

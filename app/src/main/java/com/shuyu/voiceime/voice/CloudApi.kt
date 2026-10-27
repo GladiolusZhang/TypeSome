@@ -41,6 +41,45 @@ object CloudApi {
         }
     }
 
+    /**
+     * Sends the recording itself, with the system prompt, to a chat model that understands audio
+     * (Qwen-Omni on DashScope: an `input_audio` part with a `data:;base64,` URL, streamed replies).
+     */
+    fun chatAudio(baseUrl: String, apiKey: String, model: String, system: String, wav: ByteArray, instruction: String, noThinking: Boolean = true): String {
+        if (apiKey.isBlank()) throw IOException("未填写多模态大模型 API Key")
+        val audio = "data:;base64," + android.util.Base64.encodeToString(wav, android.util.Base64.NO_WRAP)
+        val json = JSONObject()
+            .put("model", model)
+            .put("stream", true)
+            .put("modalities", JSONArray().put("text"))
+            .put("messages", JSONArray()
+                .put(JSONObject().put("role", "system").put("content", system))
+                .put(JSONObject().put("role", "user").put("content", JSONArray()
+                    .put(JSONObject().put("type", "input_audio")
+                        .put("input_audio", JSONObject().put("data", audio).put("format", "wav")))
+                    .put(JSONObject().put("type", "text").put("text", instruction)))))
+        if (noThinking && "dashscope" in baseUrl.lowercase()) json.put("enable_thinking", false)
+        val req = Request.Builder().url(url(baseUrl, "/chat/completions"))
+            .header("Authorization", "Bearer $apiKey")
+            .post(json.toString().toRequestBody("application/json".toMediaType())).build()
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("多模态大模型调用失败 ${resp.code}: ${resp.body?.string().orEmpty().take(200)}")
+            val out = StringBuilder()
+            val source = resp.body?.source() ?: throw IOException("多模态大模型没有返回内容")
+            while (true) {
+                val line = source.readUtf8Line() ?: break
+                if (!line.startsWith("data:")) continue
+                val data = line.substring(5).trim()
+                if (data == "[DONE]") break
+                val choices = try { JSONObject(data).optJSONArray("choices") } catch (_: Exception) { null } ?: continue
+                if (choices.length() == 0) continue
+                val delta = choices.getJSONObject(0).optJSONObject("delta") ?: continue
+                if (!delta.isNull("content")) out.append(delta.optString("content"))
+            }
+            return out.toString().replace(Regex("(?s)<think>.*?</think>"), "").trim()
+        }
+    }
+
     fun chat(baseUrl: String, apiKey: String, model: String, system: String, user: String, noThinking: Boolean = true): String {
         if (apiKey.isBlank()) throw IOException("未填写大模型 API Key")
         val json = JSONObject()

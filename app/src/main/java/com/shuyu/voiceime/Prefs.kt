@@ -47,6 +47,22 @@ class Prefs(context: Context) {
     /** Key used for LLM calls; falls back to the ASR key when both use the same provider. */
     val effectiveLlmKey: String get() = llmApiKey.ifBlank { asrApiKey }
 
+    // 智能整理 / 翻译 straight from the recording, with a model that takes audio (Qwen-Omni)
+    val audioLlm: Boolean get() = sp.getBoolean("audio_llm", true)
+    var audioLlmBaseUrl: String get() = str("audio_llm_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1"); set(v) = put("audio_llm_base_url", v)
+    var audioLlmApiKey: String get() = sp.getString("audio_llm_api_key", "") ?: ""; set(v) = put("audio_llm_api_key", v)
+    var audioLlmModel: String get() = str("audio_llm_model", "qwen3.8-omni-flash"); set(v) = put("audio_llm_model", v)
+    /** The key for the audio model: its own, else the text model's or the ASR one's when they are the same provider. */
+    val effectiveAudioLlmKey: String get() {
+        if (audioLlmApiKey.isNotBlank()) return audioLlmApiKey
+        val host = try { java.net.URI(audioLlmBaseUrl.trim()).host } catch (_: Exception) { null } ?: return ""
+        return when {
+            host in llmBaseUrl && llmApiKey.isNotBlank() -> llmApiKey
+            host in asrBaseUrl -> asrApiKey
+            else -> ""
+        }
+    }
+
     // ---- keyboard
     var chineseMode: Boolean get() = sp.getBoolean("chinese_mode", true); set(v) = sp.edit().putBoolean("chinese_mode", v).apply()
     val vibrate: Boolean get() = sp.getBoolean("vibrate", true)

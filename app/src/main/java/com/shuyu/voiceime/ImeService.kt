@@ -229,7 +229,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     private fun updateVoiceLabels() {
         overlay.labels = arrayOf(
             "语音输入" to (if (prefs.asrEngine == "offline") "离线 · 直接转文字" else "直接转文字"),
-            "智能整理" to "去口水词 · 更有条理",
+            "智能整理" to (if (prefs.audioLlm) "直接听录音 · 去口水词" else "去口水词 · 更有条理"),
             "翻译" to "说中文 → ${prefs.targetLanguage}")
     }
 

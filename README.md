@@ -28,7 +28,9 @@
 - **在线（默认）**：OpenAI 兼容的 `/audio/transcriptions` 接口。默认填的是硅基流动 `https://api.siliconflow.cn/v1` + `FunAudioLLM/SenseVoiceSmall`，只需在设置里填 API Key；也可以换成 OpenAI `whisper-1`、Groq 等。
 - **离线**：在设置里下载模型后完全在手机上识别，基于 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)。可选 SenseVoice（中文推荐）、Whisper base、Whisper small。
 
-大模型（整理/翻译）走 OpenAI 兼容的 `/chat/completions`，默认同样是硅基流动，Key 留空时沿用语音识别的 Key。两个提示词都可以在设置里直接改。
+从 2.0 开始，「智能整理」和「翻译」默认把整段录音和提示词直接发给能听懂语音的大模型（阿里百炼千问 Omni，默认 `qwen3.8-omni-flash`），不再先转文字；录音太长、没填 Key 或调用失败时自动退回「先识别、再整理」。
+
+文字大模型（语音输入纠错，以及整理/翻译的备用）走 OpenAI 兼容的 `/chat/completions`，默认同样是硅基流动，Key 留空时沿用语音识别的 Key。两个提示词都可以在设置里直接改。
 
 ## 编译
 

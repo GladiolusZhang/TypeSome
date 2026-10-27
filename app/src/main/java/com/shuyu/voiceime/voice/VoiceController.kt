@@ -63,8 +63,21 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
             return
         }
         val id = ++job
-        ui.onStatus("识别中…")
+        val direct = mode != Mode.PLAIN && useAudioLlm(pcm)
+        ui.onStatus(if (direct) null else "识别中…")
         worker.execute {
+            if (direct) {
+                try {
+                    val out = listen(mode, pcm, app, id)
+                    if (id != job) return@execute
+                    if (out.isNotBlank()) { post(id) { ui.onStatus(null); ui.onResult(out) }; return@execute }
+                } catch (e: Exception) {
+                    if (id != job) return@execute
+                    // the text pipeline still works: say why, then fall back to it
+                    post(id) { ui.onStatus("多模态模型不可用，改用识别后整理…") }
+                    android.util.Log.w("VoiceController", "audio LLM failed", e)
+                }
+            }
             try {
                 val vocab = Vocabulary(prefs.vocabulary)
                 val text = vocab.apply(Vad.clean(recognize(pcm, vocab)))
@@ -97,10 +110,31 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
         }
     }
 
+    /** Whether this recording goes straight to the audio model (small enough to send inline). */
+    private fun useAudioLlm(pcm: ByteArray): Boolean =
+        prefs.audioLlm && prefs.effectiveAudioLlmKey.isNotBlank() && pcm.size < MAX_AUDIO_BYTES
+
+    /** 智能整理 / 翻译 in one step: the model hears the recording, no speech recognition first. */
+    private fun listen(mode: Mode, pcm: ByteArray, app: String?, id: Int): String {
+        val vocab = Vocabulary(prefs.vocabulary)
+        val tone = if (prefs.appTone) Prompts.appTone(app) else null
+        val modeBlock = if (mode == Mode.TRANSLATE) prefs.translatePrompt.replace("{lang}", prefs.targetLanguage) else prefs.polishPrompt
+        post(id) { ui.onStatus(if (mode == Mode.TRANSLATE) "翻译成${prefs.targetLanguage}…" else "AI 整理中…") }
+        val system = Prompts.build(prefs.corePrompt, prefs.userProfile, vocab, modeBlock, tone)
+        val out = CloudApi.chatAudio(prefs.audioLlmBaseUrl, prefs.effectiveAudioLlmKey, prefs.audioLlmModel, system,
+            Recorder.toWav(pcm), Prompts.AUDIO_INSTRUCTION, prefs.noThinking)
+        return if (mode == Mode.TRANSLATE) out else vocab.apply(out)
+    }
+
     private fun recognize(pcm: ByteArray, vocab: Vocabulary): String {
         val offline = prefs.asrEngine == "offline" && prefs.offlineModelId.isNotEmpty()
         return if (offline) OfflineAsr.transcribe(ctx, prefs.offlineModelId, pcm)
         else CloudApi.transcribe(prefs.asrBaseUrl, prefs.asrApiKey, prefs.asrModel, Recorder.toWav(pcm), prefs.asrLanguage, vocab.asHint())
+    }
+
+    private companion object {
+        /** Inline audio must stay under 10 MB of base64: about 3.5 minutes of 16 kHz mono. */
+        const val MAX_AUDIO_BYTES = 7_000_000
     }
 
     private fun post(id: Int, block: () -> Unit) = main.post { if (id == job) block() }
