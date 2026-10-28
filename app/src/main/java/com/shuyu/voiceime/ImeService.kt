@@ -621,6 +621,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         keepShown()
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         if (smart == Smart.CALC) refreshCalc()
+        if (smart == Smart.OTP) dropOtpIfEntered()
     }
 
     // ================================================================ verification codes
@@ -629,7 +630,8 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         if (!prefs.otpEnabled) return
         Core.bg.execute {
             val fromSms = Otp.latestFromNotification() ?: Otp.latestFromSms(this)
-            val fromClip = clipHistory.firstOrNull()?.let { Otp.extract(it) }
+            // a copied code counts only while fresh: the clipboard keeps it long after it was used
+            val fromClip = clipOtp?.takeIf { System.currentTimeMillis() - it.second < OTP_FRESH_MS }?.first
             val code = fromSms ?: fromClip ?: return@execute
             main.post { showOtp(code) }
         }
@@ -647,16 +649,27 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     }
 
     private var shownOtp: String? = null
+    /** Code found in the clipboard and when it was copied. */
+    private var clipOtp: Pair<String, Long>? = null
+
+    /** The offered code is gone once it is in the field, however it got there (typed, pasted, autofilled). */
+    private fun dropOtpIfEntered() {
+        val code = shownOtp ?: return
+        if (smart != Smart.OTP) return
+        val ic = currentInputConnection ?: return
+        val around = "${ic.getTextBeforeCursor(64, 0) ?: ""}${ic.getTextAfterCursor(64, 0) ?: ""}"
+        if (code in around) { markOtpUsed(code); clearSmart() }
+    }
 
     private fun otpUsed(code: String): Boolean {
         val s = prefs.sp.getString("used_otp", "") ?: ""
-        return s.split(',').any { it.substringBefore('@') == code && System.currentTimeMillis() - (it.substringAfter('@').toLongOrNull() ?: 0) < 30 * 60_000 }
+        return s.split(',').any { it.substringBefore('@') == code && System.currentTimeMillis() - (it.substringAfter('@').toLongOrNull() ?: 0) < OTP_REMEMBER_MS }
     }
 
     private fun markOtpUsed(code: String) {
         val now = System.currentTimeMillis()
         val keep = (prefs.sp.getString("used_otp", "") ?: "").split(',')
-            .filter { it.contains('@') && now - (it.substringAfter('@').toLongOrNull() ?: 0) < 30 * 60_000 }
+            .filter { it.contains('@') && now - (it.substringAfter('@').toLongOrNull() ?: 0) < OTP_REMEMBER_MS }
         prefs.sp.edit().putString("used_otp", (keep + "$code@$now").takeLast(10).joinToString(",")).apply()
     }
 
@@ -829,11 +842,15 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         if (clip.itemCount == 0) return
         val text = clip.getItemAt(0).coerceToText(this)?.toString()?.trim() ?: return
         if (text.isEmpty() || text.length > 5000) return
+        val isNew = clipHistory.firstOrNull() != text
         clipHistory.remove(text)
         clipHistory.add(0, text)
         while (clipHistory.size > 30) clipHistory.removeAt(clipHistory.size - 1)
         prefs.sp.edit().putString("clip_history", JSONArray(clipHistory).toString()).apply()
-        if (isInputViewShown && prefs.otpEnabled) Otp.extract(text)?.let { showOtp(it) }
+        if (!isNew) return
+        val code = Otp.extract(text) ?: return
+        clipOtp = code to System.currentTimeMillis()
+        if (isInputViewShown && prefs.otpEnabled) showOtp(code)
     }
 
     private fun loadClipHistory() {
@@ -862,6 +879,10 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
 
     private companion object {
         const val EMOJI_HISTORY = 24
+        /** Codes are offered only this long after they arrive… */
+        const val OTP_FRESH_MS = 5 * 60_000L
+        /** …and a used code is never offered again within a day. */
+        const val OTP_REMEMBER_MS = 24 * 3600_000L
         /**
          * Outside touches only report the finger going down. Wait long enough for a normal tap to finish, so a
          * button there (e.g. 发送) gets its click before the app re-lays out under a closing keyboard.
