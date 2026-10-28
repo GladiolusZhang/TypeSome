@@ -1,0 +1,36 @@
++ adb wait-for-device
+++ seq 1 30
++ for i in $(seq 1 30)
+++ adb shell getprop sys.boot_completed
+++ tr -d '\r'
++ '[' 1 = 1 ']'
++ break
++ sleep 10
+++ ls apk/TypeSome-32.apk
+++ head -1
++ APK=apk/TypeSome-32.apk
++ for i in 1 2 3 4 5
++ adb install -r -g apk/TypeSome-32.apk
+Performing Streamed Install
+Success
++ break
+++ seq 1 12
++ for i in $(seq 1 12)
++ adb shell ime enable com.shuyu.voiceime/.ImeService
++ grep -q 'now enabled\|already enabled'
++ break
++ adb shell ime set com.shuyu.voiceime/.ImeService
+Input method com.shuyu.voiceime/.ImeService selected for user #0
++ adb shell settings put secure show_ime_with_hard_keyboard 1
++ python3 tools/screens.py shots
+Broadcasting: Intent { act=android.intent.action.CLOSE_SYSTEM_DIALOGS flg=0x400000 }
+Broadcast completed: result=0
+Night mode: yes
+Starting: Intent { cmp=com.shuyu.voiceime/.SettingsActivity (has extras) }
+Night mode: no
+Input method com.shuyu.voiceime/.ImeService selected for user #0
+Starting: Intent { cmp=com.shuyu.voiceime/.SettingsActivity (has extras) }
+keyboard top 1514 bottom 2399 density 2.625
++ adb logcat -d -b crash
++ tail -40
++ exit 0
