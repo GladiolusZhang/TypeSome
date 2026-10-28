@@ -1,5 +1,10 @@
 package com.shuyu.voiceime.pinyin
 
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.FutureTask
+
 /**
  * Composing state for full-key pinyin.
  * raw     = letters typed so far that are not yet converted (may contain apostrophes)
@@ -41,12 +46,63 @@ class PinyinEngine(private val dict: Dictionary, private val en: EnglishWords? =
     var tokens: List<Syllables.Token> = emptyList(); private set
     /** The letters [tokens] were cut from, after auto-correction (apostrophes kept). */
     private var letters = ""
-    var candidates: List<Candidate> = emptyList(); private set
+    private var list: List<Candidate> = emptyList()
+    /** The candidates for the current input; waits for them when they are still being built. */
+    val candidates: List<Candidate> get() { await(); return list }
+    /** The candidates if they are ready, without waiting; null while a newer list is being built. */
+    val readyCandidates: List<Candidate>? get() = if (pending == null) list else null
+
+    // Building candidates for a long input takes tens of milliseconds on a phone, so in full-key mode
+    // it runs on a worker thread and a key shows at once. Each key cancels the build still waiting
+    // for the previous one; a newer build always starts after the older one ends (one thread), so
+    // once the latest is done no build reads the dictionary while it learns.
+    private var worker: ExecutorService? = null
+    private var post: ((Runnable) -> Unit)? = null
+    private var pending: FutureTask<List<Candidate>>? = null
+    /** Called on the UI thread when candidates built in the background are ready. */
+    var onReady: (() -> Unit)? = null
+
+    /** Builds candidates on a worker thread from now on; [post] runs code on the UI thread. */
+    fun buildInBackground(post: (Runnable) -> Unit) {
+        this.post = post
+        if (worker == null) worker = Executors.newSingleThreadExecutor { r -> Thread(r, "candidates").apply { isDaemon = true } }
+    }
+
+    private fun await() {
+        val p = pending ?: return
+        pending = null
+        list = try { p.get() } catch (e: Exception) { listOf(Candidate(raw.toString().replace("'", ""), tokens.size)) }
+    }
+
+    private fun cancelPending() { pending?.cancel(false); pending = null }
+
+    private fun setCandidates(c: List<Candidate>) { cancelPending(); list = c }
+
+    /** Builds the candidates now, or on the worker thread from a copy of the current state. */
+    private fun build() {
+        cancelPending()
+        val w = worker; val toUi = post
+        if (w == null || toUi == null || t9 || !dict.loaded) { list = buildCandidates(); return }
+        val copy = copy()
+        val task = object : FutureTask<List<Candidate>>(Callable { copy.buildCandidates() }) {
+            override fun done() {
+                if (!isCancelled) toUi(Runnable { if (pending === this) { await(); onReady?.invoke() } })
+            }
+        }
+        pending = task
+        w.execute(task)
+    }
+
+    private fun copy(): PinyinEngine = PinyinEngine(dict, en).also { c ->
+        c.raw = StringBuilder(raw); c.cursor = cursor; c.picked.addAll(picked)
+        c.emojiFor = emojiFor; c.context = context; c.fuzzy = fuzzy; c.autoCorrect = autoCorrect; c.learning = learning
+        c.tokens = tokens; c.letters = letters
+    }
 
     val isComposing get() = raw.isNotEmpty() || picked.isNotEmpty()
 
     fun reset() {
-        raw.clear(); cursor = 0; picked.clear(); tokens = emptyList(); candidates = emptyList(); t9First = null
+        raw.clear(); cursor = 0; picked.clear(); tokens = emptyList(); setCandidates(emptyList()); t9First = null
     }
 
     /** The word right before what is being typed: the last picked word, else the end of [context]. */
@@ -183,24 +239,24 @@ class PinyinEngine(private val dict: Dictionary, private val en: EnglishWords? =
     fun refresh() {
         if (raw.isEmpty()) {
             tokens = emptyList()
-            candidates = if (picked.isNotEmpty()) listOf(Candidate(picked.joinToString("") { it.word }, 0)) else emptyList()
+            setCandidates(if (picked.isNotEmpty()) listOf(Candidate(picked.joinToString("") { it.word }, 0)) else emptyList())
             return
         }
         if (t9) {
             tokens = Syllables.segmentT9(raw.toString())
-            candidates = if (tokens.isEmpty()) listOf(Candidate(raw.toString(), 0)) else buildCandidates()
+            if (tokens.isEmpty()) setCandidates(listOf(Candidate(raw.toString(), 0))) else build()
             return
         }
         var text = raw.toString().lowercase()
         if (autoCorrect) text = Syllables.autoCorrect(text)
         letters = text
         tokens = Syllables.segment(text)
-        if (tokens.isEmpty()) { candidates = listOf(Candidate(raw.toString(), 0)); return }
+        if (tokens.isEmpty()) { setCandidates(listOf(Candidate(raw.toString(), 0))); return }
         if (autoCorrect && text != raw.toString().lowercase()) {
             // keep raw spans aligned with what the user actually typed
             tokens = realign(tokens, raw.toString())
         }
-        candidates = buildCandidates()
+        build()
     }
 
     private fun realign(toks: List<Syllables.Token>, original: String): List<Syllables.Token> {

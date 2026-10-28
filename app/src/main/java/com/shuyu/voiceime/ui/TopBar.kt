@@ -154,7 +154,9 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
 
     val isStatusShowing get() = statusText != null
 
-    fun showCandidates(composingText: String, caret: Int, cands: List<String>) {
+    /** [cands] null keeps the list shown for the previous letters (cleared if it was something else). */
+    fun showCandidates(composingText: String, caret: Int, cands: List<String>?) {
+        val keep = cands == null && !showingSuggestions && candBox.visibility == VISIBLE
         showingSuggestions = false
         expand.icon = if (Theme.flat) Icon.DOWN else Icon.CHEVRON_DOWN; expand.invalidate()
         val sb = SpannableStringBuilder(composingText)
@@ -164,7 +166,7 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
         }
         composingTab.text = sb
         composingTab.visibility = if (composingText.isEmpty()) INVISIBLE else VISIBLE
-        fill(cands.map { Suggestion(it) }, highlightFirst = true) { l.onCandidate(it) }
+        if (!keep) fill((cands ?: emptyList()).map { Suggestion(it) }, highlightFirst = true) { l.onCandidate(it) }
         only(candBox)
         invalidate()
     }
@@ -176,6 +178,8 @@ class TopBar(ctx: Context, private val l: Listener) : FrameLayout(ctx) {
         fill(items, highlightFirst = false) { l.onSuggestion(it) }
         only(candBox)
     }
+
+    fun shownCandidate(index: Int): String? = (list.getChildAt(index) as? CandidateText)?.text
 
     private fun fill(items: List<Suggestion>, highlightFirst: Boolean, click: (Int) -> Unit) {
         list.removeAllViews()

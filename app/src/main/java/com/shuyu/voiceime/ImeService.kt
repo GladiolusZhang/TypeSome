@@ -90,6 +90,8 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         dict = Core.dictionary(this)
         en = Core.english(this)
         engine = PinyinEngine(dict, en)
+        engine.buildInBackground { main.post(it) }
+        engine.onReady = { if (engine.isComposing) showComposing() }
         Core.bg.execute { EmojiWords.load(this) }
         engine.emojiFor = { w -> if (prefs.emojiWords) EmojiWords.forWord(w) else emptyList() }
         voice = VoiceController(this, this)
@@ -337,7 +339,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
             }
             KeyType.BACKSPACE -> backspace()
             KeyType.SPACE -> {
-                if (engine.isComposing || handCands.isNotEmpty()) onCandidate(0)
+                if (engine.isComposing || handCands.isNotEmpty()) pickCandidate(0)
                 else {
                     val word = englishWordBefore()
                     commit(" ")
@@ -514,11 +516,28 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         refreshT9Column()
         if (!engine.isComposing) { topBar.showToolbar(); return }
         val (text, caret) = engine.displayText()
-        topBar.showCandidates(text, caret, engine.candidates.take(60).map { it.text })
+        // while newer candidates are being built the letters show at once and the old list stays
+        shownCandidates = engine.readyCandidates?.take(SHOWN_CANDIDATES)?.map { it.text }
+        topBar.showCandidates(text, caret, shownCandidates)
         smart = Smart.NONE
     }
 
+    /** What the candidate bar shows (null while it shows an older list). */
+    private var shownCandidates: List<String>? = null
+
+    /** A tap on the bar picks what it showed, even when that list was a key behind. */
     override fun onCandidate(index: Int) {
+        if (handCands.isEmpty() && engine.readyCandidates == null) {
+            val tapped = topBar.shownCandidate(index)
+            val i = engine.candidates.indexOfFirst { it.text == tapped }
+            if (i < 0) { showComposing(); return }
+            pickCandidate(i)
+            return
+        }
+        pickCandidate(index)
+    }
+
+    private fun pickCandidate(index: Int) {
         if (handCands.isNotEmpty()) {
             val w = handCands.getOrNull(index) ?: return
             handCands = emptyList(); handPad.clear()
@@ -541,7 +560,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
     override fun onExpandCandidates() {
         if (!engine.isComposing && handCands.isEmpty()) return
         val cands = if (handCands.isNotEmpty()) handCands else engine.candidates.map { it.text }
-        showPanelView(CandidateGridPanel(this, this, cands) { i -> closePanel(); onCandidate(i) })
+        showPanelView(CandidateGridPanel(this, this, cands) { i -> closePanel(); pickCandidate(i) })
     }
 
     override fun onComposingTap(displayOffset: Int) {
@@ -885,6 +904,8 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
 
     private companion object {
         const val EMOJI_HISTORY = 24
+        /** Candidates in the bar; the expanded grid shows them all. */
+        const val SHOWN_CANDIDATES = 30
         /** Codes are offered only this long after they arrive… */
         const val OTP_FRESH_MS = 5 * 60_000L
         /** …and a used code is never offered again within a day. */
