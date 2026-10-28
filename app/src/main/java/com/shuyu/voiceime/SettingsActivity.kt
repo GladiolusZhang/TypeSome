@@ -221,6 +221,7 @@ class SettingsActivity : Activity() {
         field(omni, "接口地址", prefs.audioLlmBaseUrl, "https://dashscope.aliyuncs.com/compatible-mode/v1") { prefs.audioLlmBaseUrl = it.trim() }
         field(omni, "API Key（可留空）", prefs.audioLlmApiKey, "留空 = 沿用下面或语音识别里同一服务商的 Key", password = true) { prefs.audioLlmApiKey = it.trim() }
         field(omni, "模型", prefs.audioLlmModel, "qwen3.8-omni-flash") { prefs.audioLlmModel = it.trim() }
+        if (prefs.audioLlmTiming.isNotEmpty()) note(omni, "上一次：" + prefs.audioLlmTiming)
         note(omni, "阿里百炼的 Key 在 bailian.console.aliyun.com 获取；国际站接口地址是 https://dashscope-intl.aliyuncs.com/compatible-mode/v1 。")
 
         // ---- LLM

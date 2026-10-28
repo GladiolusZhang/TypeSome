@@ -15,6 +15,8 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
         fun onLevel(level: Float)
         fun onStatus(text: String?)          // null hides the status line
         fun onResult(text: String)
+        /** The reply so far, while the model is still writing it (replaced by [onResult]). */
+        fun onPartial(text: String) {}
         fun onError(message: String)
     }
 
@@ -127,7 +129,11 @@ class VoiceController(private val ctx: Context, private val ui: Ui) {
         post(id) { ui.onStatus(if (mode == Mode.TRANSLATE) "翻译成${prefs.targetLanguage}…" else "AI 整理中…") }
         val system = Prompts.build(prefs.corePrompt, prefs.userProfile, vocab, modeBlock, tone)
         fun send(bytes: ByteArray, format: String) = CloudApi.chatAudio(prefs.audioLlmBaseUrl, prefs.effectiveAudioLlmKey,
-            prefs.audioLlmModel, system, bytes, format, Prompts.AUDIO_INSTRUCTION, prefs.noThinking)
+            prefs.audioLlmModel, system, bytes, format, Prompts.AUDIO_INSTRUCTION, prefs.noThinking,
+            cancelled = { id != job },
+            onTiming = { t -> prefs.audioLlmTiming = "%.1f 秒开始回复，%.1f 秒出第一个字，%.1f 秒写完%s".format(
+                t.headersMs / 1000.0, t.firstTextMs / 1000.0, t.totalMs / 1000.0, if (t.requests > 1) "（第一次请求太慢，重发了一次）" else "") },
+            onPartial = { text -> post(id) { ui.onPartial(text) } })
         // AAC is a tenth of the WAV size; if this model or device won't take it, WAV still works
         val aac = Aac.encode(pcm)
         val out = if (aac == null || aac.isEmpty()) send(Recorder.toWav(pcm), "wav")

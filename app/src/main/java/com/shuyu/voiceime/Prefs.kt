@@ -51,6 +51,10 @@ class Prefs(context: Context) {
     val audioLlm: Boolean get() = sp.getBoolean("audio_llm", true)
     var audioLlmBaseUrl: String get() = str("audio_llm_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1"); set(v) = put("audio_llm_base_url", v)
     var audioLlmApiKey: String get() = sp.getString("audio_llm_api_key", "") ?: ""; set(v) = put("audio_llm_api_key", v)
+    /** How long the last request to the audio model took, shown in settings. */
+    var audioLlmTiming: String
+        get() = sp.getString("audio_llm_timing", "") ?: ""
+        set(v) = sp.edit().putString("audio_llm_timing", v).apply()
     var audioLlmModel: String get() = str("audio_llm_model", "qwen3.8-omni-flash"); set(v) = put("audio_llm_model", v)
     /** The key for the audio model: its own, else the text model's or the ASR one's when they are the same provider. */
     val effectiveAudioLlmKey: String get() {

@@ -747,11 +747,30 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
 
     override fun onStatus(text: String?) { topBar.setStatus(text) }
 
-    override fun onResult(text: String) { commit(text) }
+    /** Whether the editor holds a reply that the model is still writing (as composing text). */
+    private var voicePartial = false
 
-    override fun onError(message: String) { Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
+    override fun onPartial(text: String) {
+        val ic = currentInputConnection ?: return
+        ic.setComposingText(text, 1)
+        voicePartial = true
+    }
 
-    override fun onCancelStatus() { voice.cancel() }
+    private fun dropVoicePartial() {
+        if (!voicePartial) return
+        voicePartial = false
+        currentInputConnection?.let { it.setComposingText("", 1); it.finishComposingText() }
+    }
+
+    override fun onResult(text: String) {
+        // committing replaces the composing reply with the final text
+        voicePartial = false
+        commit(text)
+    }
+
+    override fun onError(message: String) { dropVoicePartial(); Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
+
+    override fun onCancelStatus() { voice.cancel(); dropVoicePartial() }
 
     // ================================================================ handwriting
 
