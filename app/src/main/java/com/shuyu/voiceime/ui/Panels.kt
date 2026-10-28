@@ -270,6 +270,9 @@ class EmojiPanel(ctx: Context, private val host: PanelHost, private val recent: 
 class EditPanel(ctx: Context, private val host: PanelHost, barHeight: Int) : LinearLayout(ctx) {
     private var selecting = false
     private val pad = DPad(ctx)
+    /** 全选 turns into 剪切 while text is selected. */
+    private var selectAllButton: TextView? = null
+    private var hasSelection = false
 
     init {
         orientation = VERTICAL
@@ -286,13 +289,26 @@ class EditPanel(ctx: Context, private val host: PanelHost, barHeight: Int) : Lin
             for ((label, action) in row) {
                 val b = ctx.tv(label, 18f, if (Theme.flat) Theme.HINT else Theme.TEXT)
                 b.pressable(4f, outline = true)
-                b.setOnClickListener { host.feedback(); host.editAction(action) }
+                if (action == "selectAll") {
+                    selectAllButton = b
+                    b.setOnClickListener {
+                        host.feedback()
+                        if (hasSelection) { host.editAction("cut"); selectionChanged(false) }
+                        else { host.editAction("selectAll"); selectionChanged(true) }
+                    }
+                } else b.setOnClickListener { host.feedback(); host.editAction(action) }
                 r.addView(b, LayoutParams(0, -1, 1f).apply { setMargins(ctx.dp(4f).toInt(), ctx.dp(4f).toInt(), ctx.dp(4f).toInt(), ctx.dp(4f).toInt()) })
             }
             right.addView(r, LayoutParams(-1, 0, 1f))
         }
         body.addView(right, LayoutParams(0, -1, 1f))
         addView(body, LayoutParams(-1, 0, 1f))
+    }
+
+    fun selectionChanged(selected: Boolean) {
+        if (selected == hasSelection) return
+        hasSelection = selected
+        selectAllButton?.text = if (selected) "剪切" else "全选"
     }
 
     /** Round direction pad with a 选择 toggle in the middle and home/end buttons below. */

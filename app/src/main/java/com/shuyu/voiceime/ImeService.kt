@@ -622,6 +622,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         if (smart == Smart.CALC) refreshCalc()
         if (smart == Smart.OTP) dropOtpIfEntered()
+        if (::panelHost.isInitialized) (panelHost.getChildAt(0) as? EditPanel)?.selectionChanged(newSelStart != newSelEnd)
     }
 
     // ================================================================ verification codes
@@ -767,7 +768,7 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
         val v: View = when (name) {
             "symbols" -> SymbolPanel(this, this, recent("recent_symbols")) { remember("recent_symbols", it) }
             "emoji" -> EmojiPanel(this, this, recent("recent_emoji")) { remember("recent_emoji", it, EMOJI_HISTORY) }
-            "edit" -> EditPanel(this, this, barHeight)
+            "edit" -> EditPanel(this, this, barHeight).apply { selectionChanged(!currentInputConnection?.getSelectedText(0).isNullOrEmpty()) }
             "clipboard" -> ClipboardPanel(this, this, barHeight)
             "modes" -> ModePanel(this, this, barHeight)
             else -> return
@@ -826,6 +827,11 @@ class ImeService : android.inputmethodservice.InputMethodService(), KeyboardView
                 val sel = ic.getSelectedText(0)
                 if (sel.isNullOrEmpty()) Toast.makeText(this, "先选中要复制的文字", Toast.LENGTH_SHORT).show()
                 else ic.performContextMenuAction(android.R.id.copy)
+            }
+            "cut" -> {
+                val sel = ic.getSelectedText(0)
+                if (sel.isNullOrEmpty()) Toast.makeText(this, "先选中要剪切的文字", Toast.LENGTH_SHORT).show()
+                else ic.performContextMenuAction(android.R.id.cut)
             }
             "paste" -> ic.performContextMenuAction(android.R.id.paste)
             "delete" -> backspace()
